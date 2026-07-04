@@ -68,13 +68,13 @@ Prefer well-known Rust crates where they improve correctness or maintainability.
 The core behavior is:
 
 - Walk configured filesystem roots.
-- Identify dependency/cache directories by directory-name plus nearby sentinel-file rules.
+- Identify dependency/cache directories by explicit rule cases that pair candidate targets with required filesystem evidence.
 - Exclude matched directories from Time Machine using `tmutil`.
 - Avoid descending into directories that have already been matched for exclusion.
 - Avoid descending into explicitly skipped paths.
 - Report actions, skipped paths, failures, and summary information clearly.
 
-The scanner must prune matched directories. For example, if it finds `node_modules` next to `package.json`, it should record and process that `node_modules` path, then not walk inside it. This prevents wasted traversal and avoids nested false positives inside vendored dependency trees.
+The scanner must prune matched directories. For example, if it finds `node_modules` and the active rule case's requirements are satisfied by a nearby `package.json`, it should record and process that `node_modules` path, then not walk inside it. This prevents wasted traversal and avoids nested false positives inside vendored dependency trees.
 
 The scanner should not follow symlinks by default. Symlink behavior must be explicit, documented, and tested if support is added.
 
@@ -117,15 +117,29 @@ Configuration should be explicit, auditable, and friendly to Nix generation.
 
 The tool should support configurable roots, skip paths, and dependency rules. Built-in defaults are acceptable, but users should be able to see and override them.
 
-Dependency rules should be modeled as pairs or structured records similar to upstream `asimov`'s directory/sentinel patterns. Examples from upstream include:
+Dependency rules should be modeled as structured records, not as simple directory/sentinel pairs. A rule should have a stable identifier and one or more cases. Each case should declare candidate targets plus evidence requirements that must be satisfied before the target is considered safe to exclude.
+
+Rule semantics should use this shape unless a better design is deliberately chosen during implementation:
+
+- A rule matches when any of its cases matches.
+- A case matches when the candidate path matches any target in the case and every requirement is satisfied.
+- A requirement is satisfied when any one of its evidence entries exists.
+- Multiple requirements express logical AND.
+- Multiple evidence entries inside one requirement express logical OR.
+- Evidence may be a file, directory, or either, and should declare whether it is relative to the candidate target or the candidate's parent.
+- Exclusion targets should remain directories by default; file targets are out of scope unless explicitly approved later.
+
+This model allows one rule case to cover multiple equivalent target directories, such as `.venv` and `venv`, while also supporting stricter cases that require multiple independent pieces of evidence.
+
+Examples of desired default rule behavior include:
 
 - `node_modules` with `package.json`.
 - `target` with `Cargo.toml`.
 - `vendor` with `composer.json`, `Gemfile`, or `go.mod`.
-- `.venv` or `venv` with Python sentinel files.
-- `.build` with Swift or Elixir sentinel files.
-- `.gradle` or `build` with Gradle sentinel files.
-- `.dart_tool`, `.packages`, or `build` with Dart/Flutter sentinel files.
+- `.venv` or `venv` with Python evidence such as `pyproject.toml` or `requirements.txt`.
+- `.build` with Swift or Elixir evidence.
+- `.gradle` or `build` with Gradle evidence.
+- `.dart_tool`, `.packages`, or `build` with Dart/Flutter evidence.
 - `.stack-work` with `stack.yaml`.
 - `.tox` with `tox.ini`.
 - `.nox` with `noxfile.py`.
@@ -137,7 +151,7 @@ Dependency rules should be modeled as pairs or structured records similar to ups
 - `.terragrunt-cache` with `terragrunt.hcl`.
 - `cdk.out` with `cdk.json`.
 
-The exact rule set should be chosen deliberately during implementation. Do not blindly copy every upstream rule if it is too broad or likely to create false positives. The pre-alpha state permits better defaults even if they differ from `asimov`.
+The exact rule set should be chosen deliberately during implementation. Do not blindly copy every upstream rule if it is too broad or likely to create false positives. The pre-alpha state permits better defaults and richer rule semantics even if they differ from `asimov`.
 
 ## CLI Expectations
 
@@ -188,7 +202,7 @@ Testing should cover the behavior that upstream `asimov` did not fully cover.
 Important test areas include:
 
 - Rule matching.
-- Sentinel requirements.
+- Requirement evaluation, including AND requirements and OR evidence alternatives.
 - Multiple matches in one run.
 - Idempotence.
 - Pruning matched directories.
