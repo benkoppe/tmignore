@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "nixsearch": {
+      "repository": "benkoppe/nixsearch",
+      "description": "Use for an example of datastar being used with rust + nix."
+    },
+    "asimov": {
+      "repository": "stevegrunwell/asimov",
+      "description": "The original inspiration for this project."
+    }
+  }
+}
