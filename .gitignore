@@ -1,1 +1,9 @@
+# rust
 /target
+
+# nix
+.direnv
+result
+
+# macos
+.DS_Store
