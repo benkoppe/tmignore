@@ -166,7 +166,32 @@ Relative `scan.roots` and `scan.skip_paths` are resolved against the process cur
 | `xcode.derived-data` | `Library/Developer/Xcode/DerivedData` |
 | `ollama.models` | `.ollama/models` |
 
-Global rules deliberately target precise cache directories. Whole home-directory config or cache roots such as `~/.cache`, `~/.terraform.d`, `.vagrant.d`, or `.sbt` are not excluded because they may contain credentials, user-authored configuration, or unrelated tool data. `~/Library/Caches` is not listed because macOS already excludes it from Time Machine by default.
+Global rules deliberately target precise cache directories and selected reinstallable runtime/toolchain installs. `rustup.toolchains` is intentionally included because Rust toolchains are large and reinstallable. Whole home-directory config or cache roots such as `~/.cache`, `~/.terraform.d`, `.vagrant.d`, or `.sbt` are not excluded because they may contain credentials, user-authored configuration, or unrelated tool data. `~/Library/Caches` is not listed because macOS already excludes it from Time Machine by default.
+
+### Custom Global Rule Namespaces
+
+Extra global rules are accepted only when their paths are exactly one of these known cache namespaces or children below them:
+
+| Accepted prefix |
+| --- |
+| `.cargo/registry` |
+| `.cargo/git` |
+| `.rustup/toolchains` |
+| `go/pkg/mod` |
+| `.gradle/caches` |
+| `.m2/repository` |
+| `.npm/_cacache` |
+| `Library/pnpm/store` |
+| `.bun/install/cache` |
+| `.composer/cache` |
+| `.ivy2/cache` |
+| `.cocoapods/repos` |
+| `.vagrant.d/boxes` |
+| `.terraform.d/plugin-cache` |
+| `Library/Developer/Xcode/DerivedData` |
+| `.ollama/models` |
+
+Arbitrary home subtrees such as `Documents/project`, `Desktop/cache`, `Library/Application Support`, `.config/app`, or absolute paths are rejected.
 
 ## Exit Codes
 

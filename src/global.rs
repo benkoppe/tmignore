@@ -36,6 +36,7 @@ pub struct GlobalAbsent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalSkipped {
     pub path: Utf8PathBuf,
+    pub requested_path: Utf8PathBuf,
     pub rule_id: String,
     pub reason: GlobalSkipReason,
 }
@@ -137,16 +138,18 @@ pub fn scan_global(config: &PreparedGlobalConfig) -> GlobalScanReport {
                     rule_id: rule.id.clone(),
                 });
             }
-            GlobalPathStatus::Symlink => {
+            GlobalPathStatus::Symlink(symlink_path) => {
                 report.skipped.push(GlobalSkipped {
-                    path,
+                    path: symlink_path,
+                    requested_path: path,
                     rule_id: rule.id.clone(),
                     reason: GlobalSkipReason::Symlink,
                 });
             }
             GlobalPathStatus::NotDirectory => {
                 report.skipped.push(GlobalSkipped {
-                    path,
+                    path: path.clone(),
+                    requested_path: path,
                     rule_id: rule.id.clone(),
                     reason: GlobalSkipReason::NotDirectory,
                 });
@@ -167,12 +170,22 @@ pub fn scan_global(config: &PreparedGlobalConfig) -> GlobalScanReport {
 enum GlobalPathStatus {
     Directory,
     Absent,
-    Symlink,
+    Symlink(Utf8PathBuf),
     NotDirectory,
     Failure(io::Error),
 }
 
 fn global_path_status(path: &Utf8Path, home: &Utf8Path) -> GlobalPathStatus {
+    match fs_err::symlink_metadata(home) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return GlobalPathStatus::Symlink(home.to_path_buf());
+        }
+        Ok(metadata) if metadata.file_type().is_dir() => {}
+        Ok(_) => return GlobalPathStatus::NotDirectory,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return GlobalPathStatus::Absent,
+        Err(error) => return GlobalPathStatus::Failure(error),
+    }
+
     let Ok(relative_path) = path.strip_prefix(home) else {
         return GlobalPathStatus::NotDirectory;
     };
@@ -185,7 +198,9 @@ fn global_path_status(path: &Utf8Path, home: &Utf8Path) -> GlobalPathStatus {
         }
 
         match fs_err::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => return GlobalPathStatus::Symlink,
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return GlobalPathStatus::Symlink(current.clone());
+            }
             Ok(metadata) if current == path => {
                 return if metadata.file_type().is_dir() {
                     GlobalPathStatus::Directory
@@ -285,6 +300,8 @@ mod tests {
 
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.skipped[0].reason, GlobalSkipReason::Symlink);
+        assert_eq!(report.skipped[0].path, fixture.path("cache-link"));
+        assert_eq!(report.skipped[0].requested_path, fixture.path("cache-link"));
     }
 
     #[cfg(unix)]
@@ -302,6 +319,37 @@ mod tests {
         assert!(report.matches.is_empty());
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.skipped[0].reason, GlobalSkipReason::Symlink);
+        assert_eq!(report.skipped[0].path, fixture.path(".cargo"));
+        assert_eq!(
+            report.skipped[0].requested_path,
+            fixture.path(".cargo/registry")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_global_cache_paths_when_home_is_a_symlink() {
+        let fixture = Fixture::new();
+        fixture.dir("real-home/.cargo/registry");
+        std::os::unix::fs::symlink(fixture.path("real-home"), fixture.path("linked-home")).unwrap();
+
+        let config = PreparedGlobalConfig {
+            home: fixture.path("linked-home"),
+            rules: vec![GlobalRule::home_relative(
+                "cargo.registry",
+                ".cargo/registry",
+            )],
+        };
+        let report = scan_global(&config);
+
+        assert!(report.matches.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].reason, GlobalSkipReason::Symlink);
+        assert_eq!(report.skipped[0].path, fixture.path("linked-home"));
+        assert_eq!(
+            report.skipped[0].requested_path,
+            fixture.path("linked-home/.cargo/registry")
+        );
     }
 
     struct Fixture {

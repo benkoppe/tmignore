@@ -135,6 +135,27 @@ let
     scan.skipPaths = [ "~/Developer/archive" ];
   });
 
+  invalidGlobalExtraPath = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.extraRules.bad.path = "Documents/project";
+  });
+
+  absoluteGlobalExtraPath = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.extraRules.bad.path = "/Users/alice/.cargo/registry";
+  });
+
+  tildeGlobalExtraPath = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.extraRules.bad.path = "~/.cargo/registry";
+  });
+
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
   extraRulesAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
@@ -155,6 +176,9 @@ in
     test "${if tildeRoot.success then "true" else "false"}" = "false"
     test "${if relativeSkipPath.success then "true" else "false"}" = "false"
     test "${if tildeSkipPath.success then "true" else "false"}" = "false"
+    test "${if invalidGlobalExtraPath.success then "true" else "false"}" = "false"
+    test "${if absoluteGlobalExtraPath.success then "true" else "false"}" = "false"
+    test "${if tildeGlobalExtraPath.success then "true" else "false"}" = "false"
 
     test "${builtins.elemAt dryRunAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
     test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "all"

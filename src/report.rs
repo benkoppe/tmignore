@@ -408,13 +408,24 @@ fn render_global_skipped(output: &mut String, report: &GlobalRunReport) -> Resul
 
     writeln!(output, "Skipped global caches:")?;
     for skipped in &report.scan.skipped {
-        writeln!(
-            output,
-            "- {}  skipped {} ({})",
-            skipped.path,
-            global_skip_reason_label(skipped.reason),
-            skipped.rule_id
-        )?;
+        if skipped.path == skipped.requested_path {
+            writeln!(
+                output,
+                "- {}  skipped {} ({})",
+                skipped.path,
+                global_skip_reason_label(skipped.reason),
+                skipped.rule_id
+            )?;
+        } else {
+            writeln!(
+                output,
+                "- {}  skipped {} while checking {} ({})",
+                skipped.path,
+                global_skip_reason_label(skipped.reason),
+                skipped.requested_path,
+                skipped.rule_id
+            )?;
+        }
     }
 
     writeln!(output)

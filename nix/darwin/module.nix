@@ -136,6 +136,34 @@ let
   ] ++ lib.optional (cfg.mode == "apply") "--apply";
 
   isAbsolutePath = path: lib.hasPrefix "/" path;
+  hasPathComponent = component: path: lib.elem component (lib.splitString "/" path);
+  exactOrChildPath = prefix: path: path == prefix || lib.hasPrefix "${prefix}/" path;
+  allowedGlobalCachePrefixes = [
+    ".cargo/registry"
+    ".cargo/git"
+    ".rustup/toolchains"
+    "go/pkg/mod"
+    ".gradle/caches"
+    ".m2/repository"
+    ".npm/_cacache"
+    "Library/pnpm/store"
+    ".bun/install/cache"
+    ".composer/cache"
+    ".ivy2/cache"
+    ".cocoapods/repos"
+    ".vagrant.d/boxes"
+    ".terraform.d/plugin-cache"
+    "Library/Developer/Xcode/DerivedData"
+    ".ollama/models"
+  ];
+  isAllowedGlobalExtraPath = path:
+    path != ""
+    && path != "."
+    && !(isAbsolutePath path)
+    && !(lib.hasPrefix "~" path)
+    && !(hasPathComponent ".." path)
+    && !(hasPathComponent "." path)
+    && lib.any (prefix: exactOrChildPath prefix path) allowedGlobalCachePrefixes;
 in
 {
   options.services.tmignore = {
@@ -304,6 +332,10 @@ in
       {
         assertion = lib.all isAbsolutePath scanCfg.skipPaths;
         message = "services.tmignore.scan.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
+      }
+      {
+        assertion = lib.all isAllowedGlobalExtraPath (lib.mapAttrsToList (_: rule: rule.path) globalCfg.extraRules);
+        message = "services.tmignore.global.extraRules paths must be home-relative paths under a known cache namespace.";
       }
     ];
 

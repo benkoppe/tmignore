@@ -193,7 +193,7 @@ Safety expectations:
 - Do not follow symlinks by default.
 - Do not scan the entire filesystem by default.
 - Do not silently ignore backend failures.
-- Do not treat application bundles, package manager internals, or language runtime installs as obviously safe unless explicitly configured.
+- Do not treat application bundles or package manager internals as obviously safe unless explicitly configured. Selected reinstallable runtime/toolchain installs may be included in the global catalog when they are precise, documented, and user-approved.
 - Do not require network access at runtime.
 
 The tool's job is to manage exclusion metadata, not to clean caches or decide what files are disposable beyond backup/index exclusion.
