@@ -6,6 +6,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     crane.url = "github:ipetkov/crane";
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -17,6 +21,7 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/cargo.nix
+        ./nix/darwin.nix
       ];
       systems = [
         "x86_64-linux"
