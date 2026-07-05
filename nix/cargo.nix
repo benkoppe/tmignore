@@ -29,6 +29,7 @@
         // {
           inherit cargoArtifacts;
           pname = "tmignore";
+          meta.mainProgram = "tmignore";
         }
       );
     in

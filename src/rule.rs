@@ -81,9 +81,12 @@ impl Evidence {
     pub fn resolve_against(self, candidate_path: &Utf8Path) -> Option<Utf8PathBuf> {
         match self.base {
             EvidenceBase::Candidate => Some(candidate_path.join(self.path)),
-            EvidenceBase::CandidateParent => {
-                candidate_path.parent().map(|parent| parent.join(self.path))
-            }
+            EvidenceBase::CandidateParent => Some(
+                candidate_path
+                    .parent()
+                    .unwrap_or_else(|| Utf8Path::new("."))
+                    .join(self.path),
+            ),
         }
     }
 }
