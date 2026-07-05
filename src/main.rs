@@ -32,11 +32,11 @@ fn main() -> ExitCode {
 fn run_scan(args: ScanArgs) -> ExitCode {
     let mode = args.common.run_mode();
     let report_verbosity = args.common.report_verbosity();
-    let app_config = match load_app_config(&args.common, mode) {
+    let scan_config = match AppConfig::load_scan(args.common.config.as_deref(), mode) {
         Ok(config) => config,
         Err(error) => return global_failure(error),
     };
-    let scan_config = app_config.scan.with_cli_paths(args.root, args.skip);
+    let scan_config = scan_config.with_cli_paths(args.root, args.skip);
 
     let scan_config = match scan_config.prepare() {
         Ok(config) => config,
@@ -57,11 +57,11 @@ fn run_scan(args: ScanArgs) -> ExitCode {
 fn run_global(args: GlobalArgs) -> ExitCode {
     let mode = args.common.run_mode();
     let report_verbosity = args.common.report_verbosity();
-    let app_config = match load_app_config(&args.common, mode) {
+    let global_config = match AppConfig::load_global(args.common.config.as_deref()) {
         Ok(config) => config,
         Err(error) => return global_failure(error),
     };
-    let global_config = match app_config.global.prepare() {
+    let global_config = match global_config.prepare() {
         Ok(config) => config,
         Err(error) => return global_failure(error),
     };

@@ -246,7 +246,7 @@ in
         default = { };
         example = lib.literalExpression ''
           {
-            custom_cache.path = ".custom-cache";
+            custom_cache.path = ".custom-cache/data";
           }
         '';
         description = "Named extra global cache rules written under global.extra_rules in tmignore's TOML config.";

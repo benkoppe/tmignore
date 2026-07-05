@@ -189,7 +189,6 @@ pub fn default_global_rules() -> Vec<GlobalRule> {
         GlobalRule::home_relative("vagrant.boxes", ".vagrant.d/boxes"),
         GlobalRule::home_relative("terraform.plugin-cache", ".terraform.d/plugin-cache"),
         GlobalRule::home_relative("xcode.derived-data", "Library/Developer/Xcode/DerivedData"),
-        GlobalRule::home_relative("xdg.cache", ".cache"),
         GlobalRule::home_relative("ollama.models", ".ollama/models"),
     ]
 }

@@ -9,6 +9,7 @@ use figment::Figment;
 use figment::providers::{Format, Toml};
 use path_clean::PathClean;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::global::{GlobalRule, default_global_rules};
 use crate::rule::{Evidence, Requirement, Rule, RuleCase, default_rules};
@@ -43,6 +44,24 @@ pub struct GlobalConfig {
 struct FileConfig {
     #[serde(default)]
     scan: FileScanConfig,
+    #[serde(default)]
+    global: FileGlobalConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileScanOnlyConfig {
+    #[serde(default)]
+    scan: FileScanConfig,
+    #[serde(default, rename = "global")]
+    _global: Option<IgnoredAny>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileGlobalOnlyConfig {
+    #[serde(default, rename = "scan")]
+    _scan: Option<IgnoredAny>,
     #[serde(default)]
     global: FileGlobalConfig,
 }
@@ -142,6 +161,24 @@ impl AppConfig {
             scan: Config::from_file(file_config.scan, Vec::new(), Vec::new(), mode)?,
             global: GlobalConfig::from_file(file_config.global)?,
         })
+    }
+
+    pub fn load_scan(config_path: Option<&Utf8Path>, mode: RunMode) -> Result<Config, ConfigError> {
+        let file_config = match config_path {
+            Some(path) => load_file_scan_config(path)?,
+            None => FileScanOnlyConfig::default(),
+        };
+
+        Config::from_file(file_config.scan, Vec::new(), Vec::new(), mode)
+    }
+
+    pub fn load_global(config_path: Option<&Utf8Path>) -> Result<GlobalConfig, ConfigError> {
+        let file_config = match config_path {
+            Some(path) => load_file_global_config(path)?,
+            None => FileGlobalOnlyConfig::default(),
+        };
+
+        GlobalConfig::from_file(file_config.global)
     }
 }
 
@@ -261,6 +298,26 @@ impl GlobalConfig {
 }
 
 fn load_file_config(path: &Utf8Path) -> Result<FileConfig, ConfigError> {
+    Figment::new()
+        .merge(Toml::file(path.as_std_path()))
+        .extract()
+        .map_err(|source| ConfigError::LoadFile {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })
+}
+
+fn load_file_scan_config(path: &Utf8Path) -> Result<FileScanOnlyConfig, ConfigError> {
+    Figment::new()
+        .merge(Toml::file(path.as_std_path()))
+        .extract()
+        .map_err(|source| ConfigError::LoadFile {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })
+}
+
+fn load_file_global_config(path: &Utf8Path) -> Result<FileGlobalOnlyConfig, ConfigError> {
     Figment::new()
         .merge(Toml::file(path.as_std_path()))
         .extract()
@@ -399,6 +456,14 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(rule_id, "global rule path must not be empty");
     }
 
+    if path.as_str() == "." {
+        return invalid_global_rule(rule_id, "global rule path must not be the home directory");
+    }
+
+    if path.as_str() == "/" {
+        return invalid_global_rule(rule_id, "global rule path must not be the filesystem root");
+    }
+
     if path.as_str().starts_with('~') {
         return invalid_global_rule(
             rule_id,
@@ -413,7 +478,61 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(rule_id, "global rule path must not contain `..`");
     }
 
+    if path.components().any(|component| component.as_str() == ".") {
+        return invalid_global_rule(rule_id, "global rule path must not contain `.` components");
+    }
+
+    let component_count = normal_component_count(path);
+
+    if path.is_absolute() {
+        if component_count < 3 {
+            return invalid_global_rule(
+                rule_id,
+                "absolute global rule path is too broad; use a precise cache subdirectory",
+            );
+        }
+    } else if component_count < 2 {
+        return invalid_global_rule(
+            rule_id,
+            "global rule path is too broad; use a precise cache subdirectory",
+        );
+    }
+
+    if let Some(last_component) = path.components().next_back()
+        && is_broad_global_component(last_component.as_str())
+    {
+        return invalid_global_rule(
+            rule_id,
+            "global rule path is too broad; use a precise cache subdirectory",
+        );
+    }
+
     Ok(())
+}
+
+fn normal_component_count(path: &Utf8Path) -> usize {
+    path.components()
+        .filter(|component| !matches!(component.as_str(), "/" | "."))
+        .count()
+}
+
+fn is_broad_global_component(component: &str) -> bool {
+    matches!(
+        component,
+        "Library"
+            | ".cache"
+            | ".config"
+            | ".local"
+            | ".terraform.d"
+            | ".vagrant.d"
+            | ".sbt"
+            | ".gradle"
+            | ".cargo"
+            | ".rustup"
+            | ".m2"
+            | ".npm"
+            | ".cocoapods"
+    )
 }
 
 fn validate_rule(rule: &Rule) -> Result<(), ConfigError> {
@@ -740,6 +859,108 @@ requirements = [
             ConfigError::InvalidRule { ref rule_id, ref message }
                 if rule_id == "bad_rule" && message.contains("target path must not contain")
         ));
+    }
+
+    #[test]
+    fn rejects_broad_global_rule_paths() {
+        let fixture = Fixture::new();
+
+        for path in [
+            ".",
+            "/",
+            "Library",
+            ".terraform.d",
+            ".cargo",
+            "~/.cache",
+            "../cache",
+        ] {
+            let config_path = fixture.config_file(&format!(
+                r#"
+[global]
+builtin_rules = "none"
+
+[global.extra_rules.bad_global]
+path = "{path}"
+"#
+            ));
+
+            let error = AppConfig::load_global(Some(&config_path)).unwrap_err();
+
+            assert!(
+                matches!(error, ConfigError::InvalidGlobalRule { ref rule_id, .. } if rule_id == "bad_global"),
+                "expected invalid global rule for {path}, got {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_precise_global_rule_paths() {
+        let fixture = Fixture::new();
+        let config_path = fixture.config_file(
+            r#"
+[global]
+builtin_rules = "none"
+
+[global.extra_rules.terraform_plugins]
+path = ".terraform.d/plugin-cache"
+
+[global.extra_rules.cargo_registry]
+path = ".cargo/registry"
+
+[global.extra_rules.pnpm_store]
+path = "Library/pnpm/store"
+
+[global.extra_rules.absolute_custom]
+path = "/Users/alice/.custom/cache"
+"#,
+        );
+
+        let config = AppConfig::load_global(Some(&config_path)).unwrap();
+
+        assert_eq!(config.rules.len(), 4);
+    }
+
+    #[test]
+    fn scan_loading_does_not_validate_unused_global_section() {
+        let fixture = Fixture::new();
+        let config_path = fixture.config_file(
+            r#"
+[scan]
+roots = ["projects"]
+
+[global.extra_rules.bad_global]
+path = "."
+"#,
+        );
+
+        let config = AppConfig::load_scan(Some(&config_path), RunMode::DryRun).unwrap();
+
+        assert_eq!(config.roots, vec![Utf8PathBuf::from("projects")]);
+    }
+
+    #[test]
+    fn global_loading_does_not_validate_unused_scan_section() {
+        let fixture = Fixture::new();
+        let config_path = fixture.config_file(
+            r#"
+[scan]
+builtin_rules = "none"
+
+[scan.extra_rules.bad_rule]
+[[scan.extra_rules.bad_rule.cases]]
+targets = [{ path = "../cache", kind = "directory" }]
+requirements = [
+  { any_of = [{ path = "custom.toml", kind = "file", base = "candidate_parent" }] },
+]
+
+[global]
+builtin_rules = "none"
+"#,
+        );
+
+        let config = AppConfig::load_global(Some(&config_path)).unwrap();
+
+        assert!(config.rules.is_empty());
     }
 
     #[test]

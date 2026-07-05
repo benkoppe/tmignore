@@ -38,14 +38,14 @@ fn dry_run_reports_matched_dependency_directory() {
 #[test]
 fn global_reports_matched_global_cache_directory() {
     let fixture = Fixture::new();
-    fixture.dir(".custom-cache");
+    fixture.dir(".custom-cache/data");
     let config = fixture.config_file(
         r#"
 [global]
 builtin_rules = "none"
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache"
+path = ".custom-cache/data"
 "#,
     );
 
@@ -59,7 +59,7 @@ path = ".custom-cache"
         .stdout(
             predicate::str::contains("Global cache roots:")
                 .and(predicate::str::contains("Matched global caches:"))
-                .and(predicate::str::contains(".custom-cache"))
+                .and(predicate::str::contains(".custom-cache/data"))
                 .and(predicate::str::contains("    matched: custom_cache")),
         );
 }
@@ -69,7 +69,7 @@ fn all_reports_scan_and_global_sections() {
     let fixture = Fixture::new();
     fixture.dir("project/node_modules");
     fixture.file("project/package.json");
-    fixture.dir(".custom-cache");
+    fixture.dir(".custom-cache/data");
     let config = fixture.config_file(&format!(
         r#"
 [scan]
@@ -79,7 +79,7 @@ roots = ["{}"]
 builtin_rules = "none"
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache"
+path = ".custom-cache/data"
 "#,
         fixture.path_string("project")
     ));
@@ -94,6 +94,8 @@ path = ".custom-cache"
         .stdout(
             predicate::str::contains("Scan:")
                 .and(predicate::str::contains("Global:"))
+                .and(predicate::str::contains("Scan summary:"))
+                .and(predicate::str::contains("Global summary:"))
                 .and(predicate::str::contains("    matched: node.node-modules"))
                 .and(predicate::str::contains("    matched: custom_cache")),
         );

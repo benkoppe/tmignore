@@ -69,7 +69,7 @@ pub fn render_human_report(
     let mut output = String::new();
 
     render_mode_notice(&mut output, options.mode)?;
-    render_scan_body(&mut output, report, options)?;
+    render_scan_body(&mut output, report, options, "Summary:")?;
 
     Ok(output)
 }
@@ -81,7 +81,7 @@ pub fn render_global_human_report(
     let mut output = String::new();
 
     render_mode_notice(&mut output, options.mode)?;
-    render_global_section(&mut output, report, options)?;
+    render_global_section(&mut output, report, options, "Summary:")?;
 
     Ok(output)
 }
@@ -95,9 +95,9 @@ pub fn render_all_human_report(
 
     render_mode_notice(&mut output, options.mode)?;
     writeln!(output, "Scan:")?;
-    render_scan_body(&mut output, scan_report, options)?;
+    render_scan_body(&mut output, scan_report, options, "Scan summary:")?;
     writeln!(output, "Global:")?;
-    render_global_section(&mut output, global_report, options)?;
+    render_global_section(&mut output, global_report, options, "Global summary:")?;
 
     Ok(output)
 }
@@ -106,12 +106,13 @@ fn render_scan_body(
     output: &mut String,
     report: &RunReport,
     options: ReportOptions,
+    summary_label: &'static str,
 ) -> Result<(), fmt::Error> {
     render_roots(output, report)?;
     render_matches(output, report, options.mode)?;
     render_skipped(output, report, options.verbosity)?;
     render_failures(output, report)?;
-    render_summary(output, report)
+    render_summary(output, report, summary_label)
 }
 
 fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
@@ -319,8 +320,12 @@ fn render_diagnostic_stream(
     Ok(())
 }
 
-fn render_summary(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
-    writeln!(output, "Summary:")?;
+fn render_summary(
+    output: &mut String,
+    report: &RunReport,
+    summary_label: &'static str,
+) -> Result<(), fmt::Error> {
+    writeln!(output, "{summary_label}")?;
     writeln!(
         output,
         "{} matched, {} skipped, {} failed",
@@ -334,6 +339,7 @@ fn render_global_section(
     output: &mut String,
     report: &GlobalRunReport,
     options: ReportOptions,
+    summary_label: &'static str,
 ) -> Result<(), fmt::Error> {
     writeln!(output, "Global cache roots:")?;
     writeln!(output, "- {}", report.scan.home)?;
@@ -343,7 +349,7 @@ fn render_global_section(
     render_global_absent(output, report, options.verbosity)?;
     render_global_skipped(output, report)?;
     render_global_failures(output, report)?;
-    render_global_summary(output, report)
+    render_global_summary(output, report, summary_label)
 }
 
 fn render_global_matches(
@@ -471,8 +477,12 @@ fn global_backend_failures(report: &GlobalRunReport) -> Vec<&GlobalAction> {
         .collect()
 }
 
-fn render_global_summary(output: &mut String, report: &GlobalRunReport) -> Result<(), fmt::Error> {
-    writeln!(output, "Summary:")?;
+fn render_global_summary(
+    output: &mut String,
+    report: &GlobalRunReport,
+    summary_label: &'static str,
+) -> Result<(), fmt::Error> {
+    writeln!(output, "{summary_label}")?;
     writeln!(
         output,
         "{} matched, {} absent, {} skipped, {} failed",

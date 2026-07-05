@@ -95,7 +95,7 @@ services.tmignore.scan.extraRules.pnpm_store = {
 Extra global cache rules are simpler fixed paths, resolved relative to the user's home directory unless absolute:
 
 ```nix
-services.tmignore.global.extraRules.custom_cache.path = ".custom-cache";
+services.tmignore.global.extraRules.custom_cache.path = ".custom-cache/data";
 ```
 
 Manual CLI usage is split into explicit commands:

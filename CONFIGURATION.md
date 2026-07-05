@@ -75,7 +75,7 @@ in
     scan.skipPaths = [ "${home}/Developer/archive" ];
     scan.disabledBuiltinRules = [ "node.parcel-cache" ];
     global.disabledBuiltinRules = [ "ollama.models" ];
-    global.extraRules.custom_cache.path = ".custom-cache";
+    global.extraRules.custom_cache.path = ".custom-cache/data";
     stdoutPath = "${home}/Library/Logs/tmignore.log";
     stderrPath = "${home}/Library/Logs/tmignore.error.log";
   };
@@ -111,7 +111,7 @@ builtin_rules = "defaults"
 disabled_builtin_rules = ["ollama.models"]
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache"
+path = ".custom-cache/data"
 ```
 
 Relative `scan.roots` and `scan.skip_paths` are resolved against the process current directory by the CLI. The nix-darwin module rejects relative scan paths. Relative global paths resolve against the user's home directory; `~` is not expanded.
@@ -164,10 +164,9 @@ Relative `scan.roots` and `scan.skip_paths` are resolved against the process cur
 | `vagrant.boxes` | `.vagrant.d/boxes` |
 | `terraform.plugin-cache` | `.terraform.d/plugin-cache` |
 | `xcode.derived-data` | `Library/Developer/Xcode/DerivedData` |
-| `xdg.cache` | `.cache` |
 | `ollama.models` | `.ollama/models` |
 
-Global rules deliberately target precise cache directories. Whole home-directory config roots such as `~/.terraform.d`, `.vagrant.d`, or `.sbt` are not excluded because they may contain credentials or user-authored configuration. `~/Library/Caches` is not listed because macOS already excludes it from Time Machine by default.
+Global rules deliberately target precise cache directories. Whole home-directory config or cache roots such as `~/.cache`, `~/.terraform.d`, `.vagrant.d`, or `.sbt` are not excluded because they may contain credentials, user-authored configuration, or unrelated tool data. `~/Library/Caches` is not listed because macOS already excludes it from Time Machine by default.
 
 ## Exit Codes
 

@@ -82,7 +82,7 @@ let
       ];
     };
     global.builtinRules = "none";
-    global.extraRules.custom_cache.path = ".custom-cache";
+    global.extraRules.custom_cache.path = ".custom-cache/data";
   };
 
   scanOnly = evalDarwin {
@@ -196,7 +196,7 @@ in
     grep -q 'path = ".pnpm-store"' '${extraRulesConfig}'
     grep -q 'base = "candidate_parent"' '${extraRulesConfig}'
     grep -q '\[global.extra_rules.custom_cache\]' '${extraRulesConfig}'
-    grep -q 'path = ".custom-cache"' '${extraRulesConfig}'
+    grep -q 'path = ".custom-cache/data"' '${extraRulesConfig}'
 
     touch $out
   '';
