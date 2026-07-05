@@ -70,6 +70,7 @@ pub fn render_human_report(
 
     render_mode_notice(&mut output, options.mode)?;
     render_scan_body(&mut output, report, options, "Summary:")?;
+    render_closing_mode_notice(&mut output, options.mode)?;
 
     Ok(output)
 }
@@ -82,6 +83,7 @@ pub fn render_global_human_report(
 
     render_mode_notice(&mut output, options.mode)?;
     render_global_section(&mut output, report, options, "Summary:")?;
+    render_closing_mode_notice(&mut output, options.mode)?;
 
     Ok(output)
 }
@@ -102,6 +104,7 @@ pub fn render_all_human_report(
     writeln!(output, "== tmignore global ==")?;
     writeln!(output)?;
     render_global_section(&mut output, global_report, options, "Global summary:")?;
+    render_closing_mode_notice(&mut output, options.mode)?;
 
     Ok(output)
 }
@@ -126,6 +129,16 @@ fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::
             output,
             "Apply mode: Time Machine exclusions were processed."
         ),
+    }
+}
+
+fn render_closing_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
+    match mode {
+        ReportMode::DryRun => writeln!(
+            output,
+            "\nDry run complete: no Time Machine exclusions were changed."
+        ),
+        ReportMode::Apply => Ok(()),
     }
 }
 
@@ -620,6 +633,7 @@ mod tests {
 
         assert!(output.contains("Dry run: no Time Machine exclusions were changed."));
         assert!(output.contains("Matched directories:\n- no matches"));
+        assert!(output.ends_with("Dry run complete: no Time Machine exclusions were changed.\n"));
     }
 
     #[test]
@@ -651,6 +665,7 @@ mod tests {
 
         assert!(output.contains("Apply mode: Time Machine exclusions were processed."));
         assert!(output.contains("    action: added exclusion"));
+        assert!(!output.contains("Dry run complete:"));
     }
 
     #[test]
