@@ -137,9 +137,10 @@ Examples of desired default rule behavior include:
 - `target` with `Cargo.toml`.
 - `vendor` with `composer.json`, `Gemfile`, or `go.mod`.
 - `.venv` or `venv` with Python evidence such as `pyproject.toml` or `requirements.txt`.
-- `.build` with Swift or Elixir evidence.
+- `.build` with Swift evidence.
+- `_build` and `deps` with Elixir evidence such as `mix.exs`.
 - `.gradle` or `build` with Gradle evidence.
-- `.dart_tool`, `.packages`, or `build` with Dart/Flutter evidence.
+- `.dart_tool` or `build` with Dart/Flutter evidence. Dart's `.packages` is a deprecated file, not a directory, and is not a valid target.
 - `.stack-work` with `stack.yaml`.
 - `.tox` with `tox.ini`.
 - `.nox` with `noxfile.py`.
@@ -147,9 +148,10 @@ Examples of desired default rule behavior include:
 - `Carthage` with `Cartfile`.
 - `Pods` with `Podfile`.
 - `.parcel-cache` with `package.json`.
-- `.terraform.d` with `.terraformrc`.
 - `.terragrunt-cache` with `terragrunt.hcl`.
 - `cdk.out` with `cdk.json`.
+
+Home-directory or global caches, such as `~/.terraform.d`, are deliberately out of scope for the built-in per-project rules. Handling global caches is a separate problem that has not been dealt with yet; do not add such rules to the default catalog without explicit user approval.
 
 The exact rule set should be chosen deliberately during implementation. Do not blindly copy every upstream rule if it is too broad or likely to create false positives. The pre-alpha state permits better defaults and richer rule semantics even if they differ from `asimov`.
 

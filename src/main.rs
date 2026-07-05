@@ -8,6 +8,13 @@ use tmignore::report::{ReportMode, ReportOptions, render_human_report};
 use tmignore::run::RunReport;
 use tmignore::scan::scan;
 
+/// Exit code when the run completed but one or more per-path operations
+/// failed, such as an unreadable directory or a `tmutil` error.
+const EXIT_PARTIAL_FAILURE: u8 = 1;
+/// Exit code when a global precondition failed and no run was performed,
+/// such as invalid configuration or missing scan roots.
+const EXIT_GLOBAL_FAILURE: u8 = 2;
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let report_verbosity = cli.report_verbosity();
@@ -15,14 +22,14 @@ fn main() -> ExitCode {
         Ok(config) => config,
         Err(error) => {
             eprintln!("{error}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(EXIT_GLOBAL_FAILURE);
         }
     };
     let config = match config.prepare() {
         Ok(config) => config,
         Err(error) => {
             eprintln!("{error}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(EXIT_GLOBAL_FAILURE);
         }
     };
 
@@ -30,7 +37,7 @@ fn main() -> ExitCode {
         Ok(report) => report,
         Err(error) => {
             eprintln!("{error}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(EXIT_GLOBAL_FAILURE);
         }
     };
 
@@ -44,14 +51,14 @@ fn main() -> ExitCode {
         Ok(rendered) => {
             print!("{rendered}");
             if report.has_failures() {
-                ExitCode::FAILURE
+                ExitCode::from(EXIT_PARTIAL_FAILURE)
             } else {
                 ExitCode::SUCCESS
             }
         }
         Err(error) => {
             eprintln!("failed to render report: {error}");
-            ExitCode::FAILURE
+            ExitCode::from(EXIT_GLOBAL_FAILURE)
         }
     }
 }

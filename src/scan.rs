@@ -70,10 +70,6 @@ pub fn scan(config: &PreparedConfig) -> Result<ScanReport, ScanError> {
     Ok(report)
 }
 
-pub fn rules(config: &PreparedConfig) -> &[Rule] {
-    &config.rules
-}
-
 fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) {
     match fs_err::symlink_metadata(root) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -395,11 +391,10 @@ mod tests {
             ("python.nox", ".nox", "noxfile.py"),
             ("swift.build", ".build", "Package.swift"),
             ("elixir.deps", "deps", "mix.exs"),
-            ("elixir.build", ".build", "mix.exs"),
+            ("elixir.build", "_build", "mix.exs"),
             ("gradle.cache", ".gradle", "settings.gradle"),
             ("gradle.build", "build", "build.gradle.kts"),
             ("dart.tool", ".dart_tool", "pubspec.yaml"),
-            ("dart.packages", ".packages", "pubspec.yaml"),
             ("dart.build", "build", "pubspec.yaml"),
             ("haskell.stack-work", ".stack-work", "stack.yaml"),
             ("vagrant.state", ".vagrant", "Vagrantfile"),
@@ -439,6 +434,7 @@ mod tests {
         fixture.dir("project/target");
         fixture.dir("project/vendor");
         fixture.dir("project/.build");
+        fixture.dir("project/_build");
 
         let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 

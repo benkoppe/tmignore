@@ -204,6 +204,42 @@ fn dry_run_verbose_lists_every_skipped_path() {
         );
 }
 
+#[test]
+fn missing_roots_exit_with_global_failure_code() {
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("at least one scan root"));
+}
+
+#[cfg(unix)]
+#[test]
+fn per_path_failures_exit_with_partial_failure_code() {
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    fixture.dir("blocked/child");
+    fixture.dir("project/node_modules");
+    fixture.file("project/package.json");
+    let blocked_path = fixture.path("blocked");
+
+    fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o000)).unwrap();
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+    let assert = command.args(["--root", fixture.root()]).assert();
+
+    fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o700)).unwrap();
+
+    assert.code(1).stdout(
+        predicate::str::contains("Failures:")
+            .and(predicate::str::contains("Permission denied"))
+            .and(predicate::str::contains("    matched: node.node-modules")),
+    );
+}
+
 struct Fixture {
     temp_dir: TempDir,
 }

@@ -169,7 +169,22 @@ fn known_tmutil_error_code(stdout: &str, stderr: &str) -> Option<&'static str> {
     KNOWN_TMUTIL_ERROR_CODES
         .iter()
         .copied()
-        .find(|code| stdout.contains(code) || stderr.contains(code))
+        .find(|code| contains_error_code(stdout, code) || contains_error_code(stderr, code))
+}
+
+/// Returns whether `text` contains `code` as a standalone signed number, so
+/// that `-20` is found in `error -20` or `Error (-20)` but not in `-200` or
+/// `x-20y`.
+fn contains_error_code(text: &str, code: &str) -> bool {
+    text.match_indices(code).any(|(index, _)| {
+        let before = text[..index].chars().next_back();
+        let after = text[index + code.len()..].chars().next();
+
+        let boundary_before = before.is_none_or(|character| !character.is_ascii_alphanumeric());
+        let boundary_after = after.is_none_or(|character| !character.is_ascii_digit());
+
+        boundary_before && boundary_after
+    })
 }
 
 #[cfg(test)]
@@ -264,6 +279,27 @@ mod tests {
         assert_eq!(diagnostic.status_code, Some(2));
         assert_eq!(diagnostic.stdout, "partial stdout\n");
         assert!(diagnostic.stderr.contains("-50"));
+    }
+
+    #[test]
+    fn recognizes_known_error_codes_only_as_standalone_numbers() {
+        assert_eq!(
+            known_tmutil_error_code("", "tmutil: error -20 while changing exclusions\n"),
+            Some("-20")
+        );
+        assert_eq!(
+            known_tmutil_error_code("", "Error (-50) while attempting to change exclusions.\n"),
+            Some("-50")
+        );
+        assert_eq!(
+            known_tmutil_error_code("", "tmutil: error -200 while changing exclusions\n"),
+            None
+        );
+        assert_eq!(
+            known_tmutil_error_code("/tmp/build-2024/node_modules\n", ""),
+            None
+        );
+        assert_eq!(known_tmutil_error_code("", "error x-20y\n"), None);
     }
 
     #[test]

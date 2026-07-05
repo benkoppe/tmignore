@@ -58,19 +58,6 @@ pub enum EvidenceBase {
     TargetParent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchedRule {
-    pub rule_id: String,
-    pub target: Target,
-    pub evidence: Vec<MatchedRuleEvidence>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchedRuleEvidence {
-    pub evidence: Evidence,
-    pub path: Utf8PathBuf,
-}
-
 impl Rule {
     pub fn new(id: impl Into<String>, cases: Vec<RuleCase>) -> Self {
         Self {
@@ -184,7 +171,7 @@ pub fn default_rules() -> Vec<Rule> {
         single_target_rule("python.nox", ".nox", vec!["noxfile.py"]),
         single_target_rule("swift.build", ".build", vec!["Package.swift"]),
         single_target_rule("elixir.deps", "deps", vec!["mix.exs"]),
-        single_target_rule("elixir.build", ".build", vec!["mix.exs"]),
+        single_target_rule("elixir.build", "_build", vec!["mix.exs"]),
         single_target_rule(
             "gradle.cache",
             ".gradle",
@@ -201,7 +188,6 @@ pub fn default_rules() -> Vec<Rule> {
             vec!["build.gradle", "build.gradle.kts"],
         ),
         single_target_rule("dart.tool", ".dart_tool", vec!["pubspec.yaml"]),
-        single_target_rule("dart.packages", ".packages", vec!["pubspec.yaml"]),
         single_target_rule("dart.build", "build", vec!["pubspec.yaml"]),
         single_target_rule("haskell.stack-work", ".stack-work", vec!["stack.yaml"]),
         single_target_rule("vagrant.state", ".vagrant", vec!["Vagrantfile"]),

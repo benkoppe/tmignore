@@ -241,11 +241,10 @@ The `defaults` catalog contains these built-in rules:
 | `python.nox` | `.nox` | `noxfile.py` |
 | `swift.build` | `.build` | `Package.swift` |
 | `elixir.deps` | `deps` | `mix.exs` |
-| `elixir.build` | `.build` | `mix.exs` |
+| `elixir.build` | `_build` | `mix.exs` |
 | `gradle.cache` | `.gradle` | `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts` |
 | `gradle.build` | `build` | `build.gradle`, `build.gradle.kts` |
 | `dart.tool` | `.dart_tool` | `pubspec.yaml` |
-| `dart.packages` | `.packages` | `pubspec.yaml` |
 | `dart.build` | `build` | `pubspec.yaml` |
 | `haskell.stack-work` | `.stack-work` | `stack.yaml` |
 | `vagrant.state` | `.vagrant` | `Vagrantfile` |
@@ -255,6 +254,8 @@ The `defaults` catalog contains these built-in rules:
 | `aws-cdk.out` | `cdk.out` | `cdk.json` |
 | `java.maven-target` | `target` | `pom.xml` |
 | `scala.sbt-target` | `target` | `build.sbt`, `project/plugins.sbt` |
+
+The catalog deliberately targets per-project dependency/cache directories only. Home-directory or global caches, such as `~/.terraform.d`, are out of scope for the built-in rules and are not yet handled.
 
 ### Path Handling
 
@@ -347,3 +348,11 @@ base = "candidate_parent"
 ```
 
 Equivalent TOML using inline arrays is also valid for the same schema.
+
+## Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The run completed without failures. |
+| `1` | The run completed, but one or more per-path operations failed, such as an unreadable directory or a `tmutil` error. The report lists each failure. |
+| `2` | A global precondition failed and no run was performed, such as invalid configuration or missing scan roots. |

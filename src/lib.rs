@@ -12,8 +12,8 @@ pub use backend::{
 };
 pub use config::{BuiltinRuleMode, Config, ConfigError, PreparedConfig, RunMode};
 pub use rule::{
-    Evidence, EvidenceBase, EvidenceKind, MatchedRule, MatchedRuleEvidence, Requirement, Rule,
-    RuleCase, Target, TargetKind, default_rules,
+    Evidence, EvidenceBase, EvidenceKind, Requirement, Rule, RuleCase, Target, TargetKind,
+    default_rules,
 };
 pub use run::{ExclusionAction, ExclusionOutcome, RunReport};
 pub use scan::{DependencyMatch, MatchedEvidence, ScanFailure, ScanReport, SkippedPath};

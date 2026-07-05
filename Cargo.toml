@@ -6,7 +6,7 @@ license = "MIT"
 
 [dependencies]
 camino = { version = "1", features = ["serde1"] }
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive"] }
 figment = { version = "0.10.19", features = ["toml"] }
 fs-err = "3"
 path-clean = "1.0.1"
