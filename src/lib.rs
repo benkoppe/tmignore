@@ -10,7 +10,7 @@ pub use backend::{
     BackendDiagnostic, CommandOutput, CommandRunner, ExclusionChange, ExclusionStatus,
     ProcessCommandRunner, TimeMachineBackend, TmutilBackend,
 };
-pub use config::{Config, ConfigError, PreparedConfig, RunMode};
+pub use config::{BuiltinRuleMode, Config, ConfigError, PreparedConfig, RunMode};
 pub use rule::{
     Evidence, EvidenceBase, EvidenceKind, MatchedRule, MatchedRuleEvidence, Requirement, Rule,
     RuleCase, Target, TargetKind, default_rules,

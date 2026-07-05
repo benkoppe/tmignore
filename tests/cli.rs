@@ -44,6 +44,87 @@ fn dry_run_reports_prepared_roots() {
         )));
 }
 
+#[test]
+fn dry_run_uses_config_file_roots() {
+    let fixture = Fixture::new();
+    fixture.dir("project/node_modules");
+    fixture.file("project/package.json");
+    let config = fixture.config_file(&format!(
+        "roots = [\"{}\"]\n",
+        fixture.path_string("project")
+    ));
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .args(["--config", config.as_str()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Matched directories:")
+                .and(predicate::str::contains("node_modules"))
+                .and(predicate::str::contains("    matched: node")),
+        );
+}
+
+#[test]
+fn cli_roots_replace_config_file_roots() {
+    let fixture = Fixture::new();
+    fixture.dir("config-project/node_modules");
+    fixture.file("config-project/package.json");
+    fixture.dir("cli-project/target");
+    fixture.file("cli-project/Cargo.toml");
+    let config = fixture.config_file(&format!(
+        "roots = [\"{}\"]\n",
+        fixture.path_string("config-project")
+    ));
+    let cli_root = fixture.path_string("cli-project");
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .args(["--config", config.as_str(), "--root", cli_root.as_str()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(format!("Scanning 1 root:\n- {cli_root}"))
+                .and(predicate::str::contains("    matched: rust"))
+                .and(predicate::str::contains("config-project").not()),
+        );
+}
+
+#[test]
+fn dry_run_uses_named_extra_rules() {
+    let fixture = Fixture::new();
+    fixture.dir("project/.custom-cache");
+    fixture.file("project/custom.toml");
+    let config = fixture.config_file(&format!(
+        r#"
+roots = ["{}"]
+builtin_rules = "none"
+
+[extra_rules.custom_cache]
+[[extra_rules.custom_cache.cases]]
+targets = [{{ path = ".custom-cache", kind = "directory" }}]
+requirements = [
+  {{ any_of = [{{ path = "custom.toml", kind = "file", base = "candidate_parent" }}] }},
+]
+"#,
+        fixture.path_string("project")
+    ));
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .args(["--config", config.as_str()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(".custom-cache")
+                .and(predicate::str::contains("    matched: custom_cache")),
+        );
+}
+
 #[cfg(unix)]
 #[test]
 fn dry_run_groups_skipped_paths_by_default() {
@@ -154,6 +235,12 @@ impl Fixture {
         let path = self.path(path);
         fs_err::create_dir_all(path.parent().unwrap()).unwrap();
         fs_err::write(path, b"").unwrap();
+    }
+
+    fn config_file(&self, contents: &str) -> String {
+        let path = self.path("tmignore.toml");
+        fs_err::write(&path, contents).unwrap();
+        path.to_str().unwrap().to_string()
     }
 
     #[cfg(unix)]

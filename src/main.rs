@@ -11,7 +11,13 @@ use tmignore::scan::scan;
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let report_verbosity = cli.report_verbosity();
-    let config = cli.into_config();
+    let config = match cli.into_config() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let config = match config.prepare() {
         Ok(config) => config,
         Err(error) => {
