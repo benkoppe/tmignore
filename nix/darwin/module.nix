@@ -137,14 +137,14 @@ in
     roots = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      example = [ "~/Developer" ];
+      example = [ "/Users/alice/Developer" ];
       description = "Filesystem roots to scan. These must be set explicitly.";
     };
 
     skipPaths = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      example = [ "~/Developer/archive" ];
+      example = [ "/Users/alice/Developer/archive" ];
       description = "Paths to skip while scanning.";
     };
 

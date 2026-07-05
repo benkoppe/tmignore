@@ -16,17 +16,23 @@ Import the module from the flake and enable the service:
     darwinConfigurations.example = nix-darwin.lib.darwinSystem {
       modules = [
         tmignore.darwinModules.default
+        ({ config, ... }:
+        let
+          home = config.users.users.alice.home;
+        in
         {
           services.tmignore = {
             enable = true;
-            roots = [ "~/Developer" ];
+            roots = [ "${home}/Developer" ];
           };
-        }
+        })
       ];
     };
   };
 }
 ```
+
+See [CONFIGURATION.md](CONFIGURATION.md) for the full nix-darwin module and TOML config reference.
 
 The default schedule is daily at 03:30 local time:
 

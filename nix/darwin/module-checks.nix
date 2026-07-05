@@ -22,8 +22,8 @@ let
   enabledDryRun = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "~/Developer" ];
-    skipPaths = [ "~/Developer/archive" ];
+    roots = [ "/Users/alice/Developer" ];
+    skipPaths = [ "/Users/alice/Developer/archive" ];
     stdoutPath = "/tmp/tmignore.log";
     stderrPath = "/tmp/tmignore.error.log";
   };
@@ -35,7 +35,7 @@ let
   enabledApply = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "~/Developer" ];
+    roots = [ "/Users/alice/Developer" ];
     mode = "apply";
     schedule = [
       {
@@ -53,7 +53,7 @@ let
   withExtraRules = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "~/Developer" ];
+    roots = [ "/Users/alice/Developer" ];
     builtinRules = "none";
     extraRules.pnpm_store = {
       cases = [
@@ -84,7 +84,7 @@ let
     (evalDarwin {
       enable = true;
       package = self'.packages.tmignore;
-      roots = [ "~/Developer" ];
+      roots = [ "/Users/alice/Developer" ];
       schedule = {
         Hour = 3;
         Minute = 30;
@@ -129,8 +129,8 @@ in
     test "${toString ((builtins.elemAt applyAgent.StartCalendarInterval 1).Minute)}" = "0"
     test "${if applyAgent.RunAtLoad then "true" else "false"}" = "true"
 
-    grep -q 'roots = \["~/Developer"\]' '${dryRunConfig}'
-    grep -q 'skip_paths = \["~/Developer/archive"\]' '${dryRunConfig}'
+    grep -q 'roots = \["/Users/alice/Developer"\]' '${dryRunConfig}'
+    grep -q 'skip_paths = \["/Users/alice/Developer/archive"\]' '${dryRunConfig}'
     grep -q 'builtin_rules = "defaults"' '${dryRunConfig}'
 
     grep -q 'builtin_rules = "none"' '${extraRulesConfig}'
