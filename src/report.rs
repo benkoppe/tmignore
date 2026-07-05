@@ -49,6 +49,7 @@ pub fn render_human_report(
 ) -> Result<String, fmt::Error> {
     let mut output = String::new();
 
+    render_mode_notice(&mut output, options.mode)?;
     render_roots(&mut output, report)?;
     render_matches(&mut output, report, options.mode)?;
     render_skipped(&mut output, report, options.verbosity)?;
@@ -56,6 +57,12 @@ pub fn render_human_report(
     render_summary(&mut output, report)?;
 
     Ok(output)
+}
+
+fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
+    match mode {
+        ReportMode::DryRun => writeln!(output, "Dry run: no Time Machine exclusions were changed."),
+    }
 }
 
 fn render_roots(output: &mut String, report: &ScanReport) -> Result<(), fmt::Error> {
@@ -75,33 +82,38 @@ fn render_roots(output: &mut String, report: &ScanReport) -> Result<(), fmt::Err
 fn render_matches(
     output: &mut String,
     report: &ScanReport,
-    mode: ReportMode,
+    _mode: ReportMode,
 ) -> Result<(), fmt::Error> {
-    match mode {
-        ReportMode::DryRun => writeln!(output, "Would exclude:")?,
-    }
+    writeln!(output, "Matched directories:")?;
 
     if report.matches.is_empty() {
         writeln!(output, "- no matches")?;
     } else {
         for dependency_match in &report.matches {
-            writeln!(output, "- {}", dependency_match.path)?;
-            writeln!(output, "  rule: {}", dependency_match.rule_id)?;
-            writeln!(output, "  target: {}", dependency_match.target.path)?;
-
-            if dependency_match.evidence.is_empty() {
-                writeln!(output, "  evidence: none")?;
-            } else {
-                writeln!(output, "  evidence:")?;
-
-                for matched_evidence in &dependency_match.evidence {
-                    writeln!(output, "  - {}", matched_evidence.path)?;
-                }
-            }
+            writeln!(
+                output,
+                "- {}  {}; evidence: {}",
+                dependency_match.path,
+                dependency_match.rule_id,
+                evidence_label(dependency_match)
+            )?;
         }
     }
 
     writeln!(output)
+}
+
+fn evidence_label(dependency_match: &crate::scan::DependencyMatch) -> String {
+    if dependency_match.evidence.is_empty() {
+        return "none".to_string();
+    }
+
+    dependency_match
+        .evidence
+        .iter()
+        .map(|matched_evidence| matched_evidence.path.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn render_skipped(
@@ -113,7 +125,12 @@ fn render_skipped(
         return Ok(());
     }
 
-    writeln!(output, "Skipped:")?;
+    match verbosity {
+        ReportVerbosity::Normal => {
+            writeln!(output, "Skipped paths (grouped; use -v to list each path):")?
+        }
+        ReportVerbosity::Verbose | ReportVerbosity::Trace => writeln!(output, "Skipped paths:")?,
+    }
 
     match verbosity {
         ReportVerbosity::Normal => render_grouped_skipped(output, report)?,
@@ -134,7 +151,7 @@ fn render_grouped_skipped(output: &mut String, report: &ScanReport) -> Result<()
         } else {
             writeln!(
                 output,
-                "- {}  {} {}",
+                "- {}  {} {} skipped below this path",
                 group.bucket,
                 group.paths.len(),
                 plural_skip_reason_label(&group.reason)
@@ -148,7 +165,7 @@ fn render_grouped_skipped(output: &mut String, report: &ScanReport) -> Result<()
 fn render_skipped_path(output: &mut String, skipped_path: &SkippedPath) -> Result<(), fmt::Error> {
     writeln!(
         output,
-        "- {}  {}",
+        "- {}  skipped {}",
         skipped_path.path,
         skip_reason_label(&skipped_path.reason)
     )
@@ -271,7 +288,8 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(output.contains("Would exclude:\n- no matches"));
+        assert!(output.contains("Dry run: no Time Machine exclusions were changed."));
+        assert!(output.contains("Matched directories:\n- no matches"));
     }
 
     #[test]
@@ -283,10 +301,10 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(output.contains("- /tmp/project/node_modules"));
-        assert!(output.contains("  rule: node"));
-        assert!(output.contains("  target: node_modules"));
-        assert!(output.contains("  evidence:\n  - /tmp/project/package.json"));
+        assert!(
+            output
+                .contains("- /tmp/project/node_modules  node; evidence: /tmp/project/package.json")
+        );
     }
 
     #[test]
@@ -301,7 +319,7 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(output.contains("Skipped:\n- /tmp/project/link  symlink"));
+        assert!(output.contains("Skipped paths (grouped; use -v to list each path):\n- /tmp/project/link  skipped symlink"));
     }
 
     #[test]
@@ -327,10 +345,10 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(output.contains("- ./.direnv  2 symlinks"));
-        assert!(output.contains("- ./result  symlink"));
-        assert!(!output.contains("./.direnv/flake-inputs/first  symlink"));
-        assert!(!output.contains("./.direnv/flake-inputs/second  symlink"));
+        assert!(output.contains("- ./.direnv  2 symlinks skipped below this path"));
+        assert!(output.contains("- ./result  skipped symlink"));
+        assert!(!output.contains("./.direnv/flake-inputs/first  skipped symlink"));
+        assert!(!output.contains("./.direnv/flake-inputs/second  skipped symlink"));
     }
 
     #[test]
@@ -352,9 +370,9 @@ mod tests {
 
         let output = render_with_verbosity(&report, ReportVerbosity::Verbose);
 
-        assert!(output.contains("- ./.direnv/flake-inputs/first  symlink"));
-        assert!(output.contains("- ./.direnv/flake-inputs/second  symlink"));
-        assert!(!output.contains("- ./.direnv  2 symlinks"));
+        assert!(output.contains("- ./.direnv/flake-inputs/first  skipped symlink"));
+        assert!(output.contains("- ./.direnv/flake-inputs/second  skipped symlink"));
+        assert!(!output.contains("- ./.direnv  2 symlinks skipped below this path"));
     }
 
     #[test]

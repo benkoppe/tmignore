@@ -15,10 +15,10 @@ fn dry_run_reports_matched_dependency_directory() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Would exclude:")
+            predicate::str::contains("Dry run: no Time Machine exclusions were changed.")
+                .and(predicate::str::contains("Matched directories:"))
                 .and(predicate::str::contains("node_modules"))
-                .and(predicate::str::contains("rule: node"))
-                .and(predicate::str::contains("target: node_modules"))
+                .and(predicate::str::contains("node; evidence:"))
                 .and(predicate::str::contains("package.json"))
                 .and(predicate::str::contains("Summary:")),
         );
@@ -41,9 +41,12 @@ fn dry_run_groups_skipped_paths_by_default() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains(".direnv  2 symlinks")
-                .and(predicate::str::contains(".direnv/first  symlink").not())
-                .and(predicate::str::contains(".direnv/second  symlink").not()),
+            predicate::str::contains("Skipped paths (grouped; use -v to list each path):")
+                .and(predicate::str::contains(
+                    ".direnv  2 symlinks skipped below this path",
+                ))
+                .and(predicate::str::contains(".direnv/first  skipped symlink").not())
+                .and(predicate::str::contains(".direnv/second  skipped symlink").not()),
         );
 }
 
@@ -64,9 +67,10 @@ fn dry_run_verbose_lists_every_skipped_path() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains(".direnv/first  symlink")
-                .and(predicate::str::contains(".direnv/second  symlink"))
-                .and(predicate::str::contains(".direnv  2 symlinks").not()),
+            predicate::str::contains("Skipped paths:")
+                .and(predicate::str::contains(".direnv/first  skipped symlink"))
+                .and(predicate::str::contains(".direnv/second  skipped symlink"))
+                .and(predicate::str::contains(".direnv  2 symlinks skipped below this path").not()),
         );
 }
 
