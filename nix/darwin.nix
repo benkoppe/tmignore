@@ -1,7 +1,7 @@
 { self, inputs, ... }:
 {
   flake.darwinModules = rec {
-    tmignore = import ./darwin-module.nix { inherit self; };
+    tmignore = import ./darwin/module.nix { inherit self; };
     default = tmignore;
   };
 
@@ -14,7 +14,7 @@
     }:
     {
       checks = lib.optionalAttrs pkgs.stdenv.isDarwin (
-        import ./darwin-module-checks.nix {
+        import ./darwin/module-checks.nix {
           inherit
             inputs
             lib
