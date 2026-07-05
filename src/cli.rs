@@ -1,7 +1,8 @@
 use camino::Utf8PathBuf;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 
 use crate::config::Config;
+use crate::report::ReportVerbosity;
 
 #[derive(Debug, Parser)]
 #[command(name = "tmignore")]
@@ -15,9 +16,16 @@ pub struct Cli {
 
     #[arg(long)]
     pub dry_run: bool,
+
+    #[arg(short, long, action = ArgAction::Count)]
+    pub verbose: u8,
 }
 
 impl Cli {
+    pub fn report_verbosity(&self) -> ReportVerbosity {
+        self.verbose.into()
+    }
+
     pub fn into_config(self) -> Config {
         Config::new(self.root, self.skip, self.dry_run)
     }

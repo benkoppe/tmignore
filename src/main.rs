@@ -2,11 +2,12 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use tmignore::cli::Cli;
-use tmignore::report::{ReportMode, render_human_report};
+use tmignore::report::{ReportOptions, render_human_report};
 use tmignore::scan::scan;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let report_verbosity = cli.report_verbosity();
     let config = cli.into_config();
 
     if !config.dry_run {
@@ -22,7 +23,7 @@ fn main() -> ExitCode {
         }
     };
 
-    match render_human_report(&report, ReportMode::DryRun) {
+    match render_human_report(&report, ReportOptions::dry_run(report_verbosity)) {
         Ok(rendered) => {
             print!("{rendered}");
             ExitCode::SUCCESS

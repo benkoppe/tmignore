@@ -35,7 +35,7 @@ pub struct SkippedPath {
     pub reason: SkipReason,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SkipReason {
     ConfiguredSkipPath,
     Symlink,
