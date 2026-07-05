@@ -80,7 +80,10 @@ pub fn render_human_report(
 fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
     match mode {
         ReportMode::DryRun => writeln!(output, "Dry run: no Time Machine exclusions were changed."),
-        ReportMode::Apply => writeln!(output, "Apply mode: Time Machine exclusions were updated."),
+        ReportMode::Apply => writeln!(
+            output,
+            "Apply mode: Time Machine exclusions were processed."
+        ),
     }
 }
 
@@ -252,7 +255,31 @@ fn render_backend_failure(output: &mut String, action: &ExclusionAction) -> Resu
     };
 
     writeln!(output, "- {}", action.path)?;
-    writeln!(output, "  error: {}", diagnostic.message)
+    writeln!(output, "  error: {}", diagnostic.message)?;
+
+    if let Some(status_code) = diagnostic.status_code {
+        writeln!(output, "  status: {status_code}")?;
+    }
+
+    render_diagnostic_stream(output, "stdout", &diagnostic.stdout)?;
+    render_diagnostic_stream(output, "stderr", &diagnostic.stderr)
+}
+
+fn render_diagnostic_stream(
+    output: &mut String,
+    label: &'static str,
+    stream: &str,
+) -> Result<(), fmt::Error> {
+    if stream.trim().is_empty() {
+        return Ok(());
+    }
+
+    writeln!(output, "  {label}:")?;
+    for line in stream.lines() {
+        writeln!(output, "    {line}")?;
+    }
+
+    Ok(())
 }
 
 fn render_summary(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
@@ -400,7 +427,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(output.contains("Apply mode: Time Machine exclusions were updated."));
+        assert!(output.contains("Apply mode: Time Machine exclusions were processed."));
         assert!(output.contains("    action: added exclusion"));
     }
 

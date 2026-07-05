@@ -1,5 +1,9 @@
 use camino::Utf8PathBuf;
 
+pub mod tmutil;
+
+pub use tmutil::{CommandOutput, CommandRunner, ProcessCommandRunner, TmutilBackend};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExclusionStatus {
     Included,

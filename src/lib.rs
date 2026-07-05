@@ -6,7 +6,10 @@ pub mod rule;
 pub mod run;
 pub mod scan;
 
-pub use backend::{BackendDiagnostic, ExclusionChange, ExclusionStatus, TimeMachineBackend};
+pub use backend::{
+    BackendDiagnostic, CommandOutput, CommandRunner, ExclusionChange, ExclusionStatus,
+    ProcessCommandRunner, TimeMachineBackend, TmutilBackend,
+};
 pub use config::{Config, RunMode};
 pub use rule::{
     DEFAULT_RULES, Evidence, EvidenceBase, EvidenceKind, MatchedRule, MatchedRuleEvidence,

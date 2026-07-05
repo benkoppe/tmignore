@@ -25,20 +25,6 @@ fn dry_run_reports_matched_dependency_directory() {
         );
 }
 
-#[test]
-fn apply_fails_until_time_machine_backend_exists() {
-    let fixture = Fixture::new();
-    let mut command = Command::cargo_bin("tmignore").unwrap();
-
-    command
-        .args(["--root", fixture.root(), "--apply"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "tmignore --apply requires the Time Machine backend",
-        ));
-}
-
 #[cfg(unix)]
 #[test]
 fn dry_run_groups_skipped_paths_by_default() {

@@ -79,6 +79,16 @@ impl RunReport {
 
         Self { scan, actions }
     }
+
+    pub fn has_failures(&self) -> bool {
+        !self.scan.failures.is_empty()
+            || self.actions.iter().any(|action| {
+                matches!(
+                    action.outcome,
+                    ExclusionOutcome::StatusFailed(_) | ExclusionOutcome::AddFailed(_)
+                )
+            })
+    }
 }
 
 #[cfg(test)]
