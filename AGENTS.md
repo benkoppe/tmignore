@@ -151,7 +151,7 @@ Examples of desired default rule behavior include:
 - `.terragrunt-cache` with `terragrunt.hcl`.
 - `cdk.out` with `cdk.json`.
 
-Home-directory or global caches are deliberately out of scope for the built-in per-project scan rules. They belong to the separate `tmignore global` command, which should use precise fixed cache paths rather than scanning the whole home directory or excluding broad configuration directories. For example, `~/.terraform.d/plugin-cache` is a valid kind of global cache target, while `~/.terraform.d` is not because it can contain credentials and user-authored configuration.
+Home-directory or global caches are deliberately out of scope for the built-in per-project scan rules. They belong to the separate `tmignore global` command, which should use precise fixed cache paths rather than scanning the whole home directory or excluding broad configuration directories. Extra global cache paths should be constrained to known cache namespaces, not arbitrary home subtrees. For example, `~/.terraform.d/plugin-cache` is a valid kind of global cache target, while `~/.terraform.d` is not because it can contain credentials and user-authored configuration.
 
 The exact rule set should be chosen deliberately during implementation. Do not blindly copy every upstream rule if it is too broad or likely to create false positives. The pre-alpha state permits better defaults and richer rule semantics even if they differ from `asimov`.
 

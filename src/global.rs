@@ -124,34 +124,34 @@ pub fn scan_global(config: &PreparedGlobalConfig) -> GlobalScanReport {
     for rule in &config.rules {
         let path = resolve_rule_path(rule, &config.home);
 
-        match fs_err::symlink_metadata(&path) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+        match global_path_status(&path, &config.home) {
+            GlobalPathStatus::Directory => {
+                report.matches.push(GlobalMatch {
+                    path,
+                    rule_id: rule.id.clone(),
+                });
+            }
+            GlobalPathStatus::Absent => {
+                report.absent.push(GlobalAbsent {
+                    path,
+                    rule_id: rule.id.clone(),
+                });
+            }
+            GlobalPathStatus::Symlink => {
                 report.skipped.push(GlobalSkipped {
                     path,
                     rule_id: rule.id.clone(),
                     reason: GlobalSkipReason::Symlink,
                 });
             }
-            Ok(metadata) if metadata.file_type().is_dir() => {
-                report.matches.push(GlobalMatch {
-                    path,
-                    rule_id: rule.id.clone(),
-                });
-            }
-            Ok(_) => {
+            GlobalPathStatus::NotDirectory => {
                 report.skipped.push(GlobalSkipped {
                     path,
                     rule_id: rule.id.clone(),
                     reason: GlobalSkipReason::NotDirectory,
                 });
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                report.absent.push(GlobalAbsent {
-                    path,
-                    rule_id: rule.id.clone(),
-                });
-            }
-            Err(error) => {
+            GlobalPathStatus::Failure(error) => {
                 report.failures.push(GlobalFailure {
                     path,
                     rule_id: rule.id.clone(),
@@ -162,6 +162,47 @@ pub fn scan_global(config: &PreparedGlobalConfig) -> GlobalScanReport {
     }
 
     report
+}
+
+enum GlobalPathStatus {
+    Directory,
+    Absent,
+    Symlink,
+    NotDirectory,
+    Failure(io::Error),
+}
+
+fn global_path_status(path: &Utf8Path, home: &Utf8Path) -> GlobalPathStatus {
+    let Ok(relative_path) = path.strip_prefix(home) else {
+        return GlobalPathStatus::NotDirectory;
+    };
+    let mut current = home.to_path_buf();
+
+    for component in relative_path.components() {
+        match component.as_str() {
+            "/" | "." => continue,
+            component => current.push(component),
+        }
+
+        match fs_err::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return GlobalPathStatus::Symlink,
+            Ok(metadata) if current == path => {
+                return if metadata.file_type().is_dir() {
+                    GlobalPathStatus::Directory
+                } else {
+                    GlobalPathStatus::NotDirectory
+                };
+            }
+            Ok(metadata) if metadata.file_type().is_dir() => {}
+            Ok(_) => return GlobalPathStatus::NotDirectory,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return GlobalPathStatus::Absent;
+            }
+            Err(error) => return GlobalPathStatus::Failure(error),
+        }
+    }
+
+    GlobalPathStatus::NotDirectory
 }
 
 pub fn resolve_rule_path(rule: &GlobalRule, home: &Utf8Path) -> Utf8PathBuf {
@@ -242,6 +283,23 @@ mod tests {
             "cache-link",
         )]));
 
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].reason, GlobalSkipReason::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_global_cache_paths_with_intermediate_symlinks() {
+        let fixture = Fixture::new();
+        fixture.dir("real-cargo/registry");
+        std::os::unix::fs::symlink(fixture.path("real-cargo"), fixture.path(".cargo")).unwrap();
+
+        let report = scan_global(&fixture.config(vec![GlobalRule::home_relative(
+            "cargo.registry",
+            ".cargo/registry",
+        )]));
+
+        assert!(report.matches.is_empty());
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.skipped[0].reason, GlobalSkipReason::Symlink);
     }

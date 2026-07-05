@@ -390,6 +390,10 @@ fn build_global_rules(
     extra_rules: BTreeMap<String, FileGlobalRule>,
 ) -> Result<Vec<GlobalRule>, ConfigError> {
     let builtin_catalog = default_global_rules();
+    for rule in &builtin_catalog {
+        validate_global_rule(&rule.id, &rule.path)?;
+    }
+
     let builtin_rule_ids = builtin_catalog
         .iter()
         .map(|rule| rule.id.clone())
@@ -464,10 +468,17 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(rule_id, "global rule path must not be the filesystem root");
     }
 
+    if path.is_absolute() {
+        return invalid_global_rule(
+            rule_id,
+            "global rule path must be relative to the home directory",
+        );
+    }
+
     if path.as_str().starts_with('~') {
         return invalid_global_rule(
             rule_id,
-            "global rule path must be absolute or relative to the home directory; `~` is not expanded",
+            "global rule path must be relative to the home directory; `~` is not expanded",
         );
     }
 
@@ -482,16 +493,7 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(rule_id, "global rule path must not contain `.` components");
     }
 
-    let component_count = normal_component_count(path);
-
-    if path.is_absolute() {
-        if component_count < 3 {
-            return invalid_global_rule(
-                rule_id,
-                "absolute global rule path is too broad; use a precise cache subdirectory",
-            );
-        }
-    } else if component_count < 2 {
+    if normal_component_count(path) < 2 {
         return invalid_global_rule(
             rule_id,
             "global rule path is too broad; use a precise cache subdirectory",
@@ -504,6 +506,13 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(
             rule_id,
             "global rule path is too broad; use a precise cache subdirectory",
+        );
+    }
+
+    if !is_allowed_global_cache_path(path) {
+        return invalid_global_rule(
+            rule_id,
+            "global rule path must be under a known cache namespace",
         );
     }
 
@@ -533,6 +542,56 @@ fn is_broad_global_component(component: &str) -> bool {
             | ".npm"
             | ".cocoapods"
     )
+}
+
+fn is_allowed_global_cache_path(path: &Utf8Path) -> bool {
+    let components = normal_components(path);
+
+    allowed_global_cache_prefixes()
+        .iter()
+        .any(|prefix| components_starts_with(&components, prefix))
+}
+
+fn normal_components(path: &Utf8Path) -> Vec<&str> {
+    path.components()
+        .filter_map(|component| {
+            let component = component.as_str();
+            if matches!(component, "/" | ".") {
+                None
+            } else {
+                Some(component)
+            }
+        })
+        .collect()
+}
+
+fn components_starts_with(components: &[&str], prefix: &[&str]) -> bool {
+    components.len() >= prefix.len()
+        && components
+            .iter()
+            .zip(prefix.iter())
+            .all(|(component, prefix)| component == prefix)
+}
+
+fn allowed_global_cache_prefixes() -> &'static [&'static [&'static str]] {
+    &[
+        &[".cargo", "registry"],
+        &[".cargo", "git"],
+        &[".rustup", "toolchains"],
+        &["go", "pkg", "mod"],
+        &[".gradle", "caches"],
+        &[".m2", "repository"],
+        &[".npm", "_cacache"],
+        &["Library", "pnpm", "store"],
+        &[".bun", "install", "cache"],
+        &[".composer", "cache"],
+        &[".ivy2", "cache"],
+        &[".cocoapods", "repos"],
+        &[".vagrant.d", "boxes"],
+        &[".terraform.d", "plugin-cache"],
+        &["Library", "Developer", "Xcode", "DerivedData"],
+        &[".ollama", "models"],
+    ]
 }
 
 fn validate_rule(rule: &Rule) -> Result<(), ConfigError> {
@@ -869,8 +928,16 @@ requirements = [
             ".",
             "/",
             "Library",
+            "Library/Application Support",
+            "Library/Mobile Documents",
             ".terraform.d",
             ".cargo",
+            ".config/app",
+            ".local/share/cache",
+            "Documents/project",
+            "Desktop/cache",
+            "Downloads/cache",
+            "/Users/alice/Documents",
             "~/.cache",
             "../cache",
         ] {
@@ -910,8 +977,8 @@ path = ".cargo/registry"
 [global.extra_rules.pnpm_store]
 path = "Library/pnpm/store"
 
-[global.extra_rules.absolute_custom]
-path = "/Users/alice/.custom/cache"
+[global.extra_rules.cargo_child]
+path = ".cargo/registry/custom"
 "#,
         );
 

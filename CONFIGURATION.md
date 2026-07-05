@@ -58,7 +58,7 @@ Global options:
 | `services.tmignore.global.enable` | `true` | Whether the scheduled job should also process global dependency/cache directories. |
 | `services.tmignore.global.builtinRules` | `"defaults"` | Built-in global rule policy: `"defaults"` or `"none"`. |
 | `services.tmignore.global.disabledBuiltinRules` | `[]` | Built-in global rule IDs to disable. |
-| `services.tmignore.global.extraRules` | `{}` | Extra named global cache paths. Relative paths resolve against the user's home directory. |
+| `services.tmignore.global.extraRules` | `{}` | Extra named global cache paths under known cache namespaces. Paths resolve against the user's home directory. |
 
 Full example:
 
@@ -75,7 +75,7 @@ in
     scan.skipPaths = [ "${home}/Developer/archive" ];
     scan.disabledBuiltinRules = [ "node.parcel-cache" ];
     global.disabledBuiltinRules = [ "ollama.models" ];
-    global.extraRules.custom_cache.path = ".custom-cache/data";
+    global.extraRules.custom_cache.path = ".cargo/registry/custom";
     stdoutPath = "${home}/Library/Logs/tmignore.log";
     stderrPath = "${home}/Library/Logs/tmignore.error.log";
   };
@@ -111,10 +111,10 @@ builtin_rules = "defaults"
 disabled_builtin_rules = ["ollama.models"]
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache/data"
+path = ".cargo/registry/custom"
 ```
 
-Relative `scan.roots` and `scan.skip_paths` are resolved against the process current directory by the CLI. The nix-darwin module rejects relative scan paths. Relative global paths resolve against the user's home directory; `~` is not expanded.
+Relative `scan.roots` and `scan.skip_paths` are resolved against the process current directory by the CLI. The nix-darwin module rejects relative scan paths. Global paths must be relative to the user's home directory and under a known cache namespace; `~` is not expanded.
 
 ## Built-In Scan Rules
 

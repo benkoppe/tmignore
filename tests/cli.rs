@@ -38,14 +38,14 @@ fn dry_run_reports_matched_dependency_directory() {
 #[test]
 fn global_reports_matched_global_cache_directory() {
     let fixture = Fixture::new();
-    fixture.dir(".custom-cache/data");
+    fixture.dir(".cargo/registry/custom");
     let config = fixture.config_file(
         r#"
 [global]
 builtin_rules = "none"
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache/data"
+path = ".cargo/registry/custom"
 "#,
     );
 
@@ -59,9 +59,34 @@ path = ".custom-cache/data"
         .stdout(
             predicate::str::contains("Global cache roots:")
                 .and(predicate::str::contains("Matched global caches:"))
-                .and(predicate::str::contains(".custom-cache/data"))
+                .and(predicate::str::contains(".cargo/registry/custom"))
                 .and(predicate::str::contains("    matched: custom_cache")),
         );
+}
+
+#[test]
+fn global_rejects_broad_extra_rule_paths() {
+    let fixture = Fixture::new();
+    let config = fixture.config_file(
+        r#"
+[global]
+builtin_rules = "none"
+
+[global.extra_rules.documents]
+path = "Documents/project"
+"#,
+    );
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .env("HOME", fixture.root())
+        .args(["global", "--config", config.as_str()])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "global rule path must be under a known cache namespace",
+        ));
 }
 
 #[test]
@@ -69,7 +94,7 @@ fn all_reports_scan_and_global_sections() {
     let fixture = Fixture::new();
     fixture.dir("project/node_modules");
     fixture.file("project/package.json");
-    fixture.dir(".custom-cache/data");
+    fixture.dir(".cargo/registry/custom");
     let config = fixture.config_file(&format!(
         r#"
 [scan]
@@ -79,7 +104,7 @@ roots = ["{}"]
 builtin_rules = "none"
 
 [global.extra_rules.custom_cache]
-path = ".custom-cache/data"
+path = ".cargo/registry/custom"
 "#,
         fixture.path_string("project")
     ));

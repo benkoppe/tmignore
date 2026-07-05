@@ -240,13 +240,13 @@ in
         type = lib.types.attrsOf (lib.types.submodule {
           options.path = lib.mkOption {
             type = lib.types.str;
-            description = "Absolute path or home-relative global cache directory path.";
+            description = "Home-relative global cache directory path under a known cache namespace.";
           };
         });
         default = { };
         example = lib.literalExpression ''
           {
-            custom_cache.path = ".custom-cache/data";
+            custom_cache.path = ".cargo/registry/custom";
           }
         '';
         description = "Named extra global cache rules written under global.extra_rules in tmignore's TOML config.";
