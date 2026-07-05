@@ -122,6 +122,8 @@ let
     "--config"
     "${tmignoreConfig}"
   ] ++ lib.optional (cfg.mode == "apply") "--apply";
+
+  isAbsolutePath = path: lib.hasPrefix "/" path;
 in
 {
   options.services.tmignore = {
@@ -138,14 +140,14 @@ in
       type = lib.types.listOf lib.types.str;
       default = [ ];
       example = [ "/Users/alice/Developer" ];
-      description = "Filesystem roots to scan. These must be set explicitly.";
+      description = "Absolute filesystem roots to scan. These must be set explicitly.";
     };
 
     skipPaths = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
       example = [ "/Users/alice/Developer/archive" ];
-      description = "Paths to skip while scanning.";
+      description = "Absolute paths to skip while scanning.";
     };
 
     mode = lib.mkOption {
@@ -233,6 +235,14 @@ in
       {
         assertion = cfg.roots != [ ];
         message = "services.tmignore.roots must contain at least one explicit scan root.";
+      }
+      {
+        assertion = lib.all isAbsolutePath cfg.roots;
+        message = "services.tmignore.roots must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
+      }
+      {
+        assertion = lib.all isAbsolutePath cfg.skipPaths;
+        message = "services.tmignore.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
       }
     ];
 

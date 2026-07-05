@@ -19,6 +19,8 @@ let
       ];
     };
 
+  evalSystem = moduleConfig: (evalDarwin moduleConfig).config.system.build.toplevel;
+
   enabledDryRun = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
@@ -92,6 +94,37 @@ let
     }).config.launchd.user.agents.tmignore.serviceConfig.StartCalendarInterval
   );
 
+  missingRoots = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+  });
+
+  relativeRoot = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    roots = [ "Developer" ];
+  });
+
+  tildeRoot = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    roots = [ "~/Developer" ];
+  });
+
+  relativeSkipPath = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    roots = [ "/Users/alice/Developer" ];
+    skipPaths = [ "archive" ];
+  });
+
+  tildeSkipPath = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    roots = [ "/Users/alice/Developer" ];
+    skipPaths = [ "~/Developer/archive" ];
+  });
+
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
   extraRulesAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
@@ -106,6 +139,11 @@ in
 
     test "${if disabled.config.launchd.user.agents ? tmignore then "true" else "false"}" = "false"
     test "${if invalidSchedule.success then "true" else "false"}" = "false"
+    test "${if missingRoots.success then "true" else "false"}" = "false"
+    test "${if relativeRoot.success then "true" else "false"}" = "false"
+    test "${if tildeRoot.success then "true" else "false"}" = "false"
+    test "${if relativeSkipPath.success then "true" else "false"}" = "false"
+    test "${if tildeSkipPath.success then "true" else "false"}" = "false"
 
     test "${builtins.elemAt dryRunAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
     test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "--config"

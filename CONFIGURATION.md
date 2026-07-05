@@ -47,7 +47,7 @@ Type: list of strings
 
 Default: `[]`
 
-Filesystem roots to scan. This must be non-empty when the service is enabled. These values are written to TOML as `roots`.
+Absolute filesystem roots to scan. This must be non-empty when the service is enabled. Relative paths and `~` are rejected by the module. These values are written to TOML as `roots`.
 
 `services.tmignore.skipPaths`
 
@@ -55,7 +55,7 @@ Type: list of strings
 
 Default: `[]`
 
-Paths to skip while scanning. These values are written to TOML as `skip_paths`.
+Absolute paths to skip while scanning. Relative paths and `~` are rejected by the module. These values are written to TOML as `skip_paths`.
 
 `services.tmignore.mode`
 
