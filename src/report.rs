@@ -375,7 +375,7 @@ mod tests {
 
     use super::*;
     use crate::backend::BackendDiagnostic;
-    use crate::rule::{Evidence, EvidenceKind, Target, TargetKind};
+    use crate::rule::{Evidence, EvidenceKind, Target};
     use crate::scan::{DependencyMatch, MatchedEvidence, ScanReport, SkippedPath};
 
     #[test]
@@ -638,11 +638,8 @@ mod tests {
     fn node_match() -> DependencyMatch {
         DependencyMatch {
             path: Utf8PathBuf::from("/tmp/project/node_modules"),
-            rule_id: "node",
-            target: Target {
-                path: "node_modules",
-                kind: TargetKind::Directory,
-            },
+            rule_id: "node".to_string(),
+            target: Target::directory("node_modules"),
             evidence: vec![MatchedEvidence {
                 evidence: Evidence::candidate_parent("package.json", EvidenceKind::File),
                 path: Utf8PathBuf::from("/tmp/project/package.json"),

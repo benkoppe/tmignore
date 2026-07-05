@@ -1,48 +1,57 @@
 use camino::{Utf8Path, Utf8PathBuf};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rule {
-    pub id: &'static str,
-    pub cases: &'static [RuleCase],
+    pub id: String,
+    pub cases: Vec<RuleCase>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuleCase {
-    pub targets: &'static [Target],
-    pub requirements: &'static [Requirement],
+    pub targets: Vec<Target>,
+    pub requirements: Vec<Requirement>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Target {
-    pub path: &'static str,
+    pub path: String,
     pub kind: TargetKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TargetKind {
     Directory,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Requirement {
-    pub any_of: &'static [Evidence],
+    pub any_of: Vec<Evidence>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Evidence {
-    pub path: &'static str,
+    pub path: String,
     pub kind: EvidenceKind,
     pub base: EvidenceBase,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceKind {
     File,
     Directory,
     Any,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceBase {
     Candidate,
     CandidateParent,
@@ -50,7 +59,7 @@ pub enum EvidenceBase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchedRule {
-    pub rule_id: &'static str,
+    pub rule_id: String,
     pub target: Target,
     pub evidence: Vec<MatchedRuleEvidence>,
 }
@@ -61,158 +70,107 @@ pub struct MatchedRuleEvidence {
     pub path: Utf8PathBuf,
 }
 
-impl Evidence {
-    pub const fn candidate(path: &'static str, kind: EvidenceKind) -> Self {
+impl Rule {
+    pub fn new(id: impl Into<String>, cases: Vec<RuleCase>) -> Self {
         Self {
-            path,
+            id: id.into(),
+            cases,
+        }
+    }
+}
+
+impl RuleCase {
+    pub fn new(targets: Vec<Target>, requirements: Vec<Requirement>) -> Self {
+        Self {
+            targets,
+            requirements,
+        }
+    }
+}
+
+impl Target {
+    pub fn directory(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            kind: TargetKind::Directory,
+        }
+    }
+}
+
+impl Requirement {
+    pub fn any_of(evidence: Vec<Evidence>) -> Self {
+        Self { any_of: evidence }
+    }
+}
+
+impl Evidence {
+    pub fn candidate(path: impl Into<String>, kind: EvidenceKind) -> Self {
+        Self {
+            path: path.into(),
             kind,
             base: EvidenceBase::Candidate,
         }
     }
 
-    pub const fn candidate_parent(path: &'static str, kind: EvidenceKind) -> Self {
+    pub fn candidate_parent(path: impl Into<String>, kind: EvidenceKind) -> Self {
         Self {
-            path,
+            path: path.into(),
             kind,
             base: EvidenceBase::CandidateParent,
         }
     }
 
-    pub fn resolve_against(self, candidate_path: &Utf8Path) -> Option<Utf8PathBuf> {
+    pub fn resolve_against(&self, candidate_path: &Utf8Path) -> Utf8PathBuf {
         match self.base {
-            EvidenceBase::Candidate => Some(candidate_path.join(self.path)),
-            EvidenceBase::CandidateParent => Some(
-                candidate_path
-                    .parent()
-                    .unwrap_or_else(|| Utf8Path::new("."))
-                    .join(self.path),
-            ),
+            EvidenceBase::Candidate => candidate_path.join(&self.path),
+            EvidenceBase::CandidateParent => candidate_path
+                .parent()
+                .unwrap_or_else(|| Utf8Path::new("."))
+                .join(&self.path),
         }
     }
 }
 
 const FILE: EvidenceKind = EvidenceKind::File;
 
-pub const DEFAULT_RULES: &[Rule] = &[
-    Rule {
-        id: "node",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: "node_modules",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("package.json", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "rust",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: "target",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("Cargo.toml", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "vendor",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: "vendor",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[
-                    Evidence::candidate_parent("composer.json", FILE),
-                    Evidence::candidate_parent("Gemfile", FILE),
-                    Evidence::candidate_parent("go.mod", FILE),
-                ],
-            }],
-        }],
-    },
-    Rule {
-        id: "python-venv",
-        cases: &[RuleCase {
-            targets: &[
-                Target {
-                    path: ".venv",
-                    kind: TargetKind::Directory,
-                },
-                Target {
-                    path: "venv",
-                    kind: TargetKind::Directory,
-                },
-            ],
-            requirements: &[Requirement {
-                any_of: &[
+pub fn default_rules() -> Vec<Rule> {
+    vec![
+        single_target_rule("node", "node_modules", vec!["package.json"]),
+        single_target_rule("rust", "target", vec!["Cargo.toml"]),
+        single_target_rule(
+            "vendor",
+            "vendor",
+            vec!["composer.json", "Gemfile", "go.mod"],
+        ),
+        Rule::new(
+            "python-venv",
+            vec![RuleCase::new(
+                vec![Target::directory(".venv"), Target::directory("venv")],
+                vec![Requirement::any_of(vec![
                     Evidence::candidate_parent("pyproject.toml", FILE),
                     Evidence::candidate_parent("requirements.txt", FILE),
-                ],
-            }],
-        }],
-    },
-    Rule {
-        id: "tox",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: ".tox",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("tox.ini", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "nox",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: ".nox",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("noxfile.py", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "parcel",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: ".parcel-cache",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("package.json", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "terragrunt",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: ".terragrunt-cache",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("terragrunt.hcl", FILE)],
-            }],
-        }],
-    },
-    Rule {
-        id: "cdk",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: "cdk.out",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[Requirement {
-                any_of: &[Evidence::candidate_parent("cdk.json", FILE)],
-            }],
-        }],
-    },
-];
+                ])],
+            )],
+        ),
+        single_target_rule("tox", ".tox", vec!["tox.ini"]),
+        single_target_rule("nox", ".nox", vec!["noxfile.py"]),
+        single_target_rule("parcel", ".parcel-cache", vec!["package.json"]),
+        single_target_rule("terragrunt", ".terragrunt-cache", vec!["terragrunt.hcl"]),
+        single_target_rule("cdk", "cdk.out", vec!["cdk.json"]),
+    ]
+}
+
+fn single_target_rule(id: &str, target: &str, parent_evidence: Vec<&str>) -> Rule {
+    Rule::new(
+        id,
+        vec![RuleCase::new(
+            vec![Target::directory(target)],
+            vec![Requirement::any_of(
+                parent_evidence
+                    .into_iter()
+                    .map(|path| Evidence::candidate_parent(path, FILE))
+                    .collect(),
+            )],
+        )],
+    )
+}

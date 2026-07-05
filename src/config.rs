@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use path_clean::PathClean;
 
-use crate::rule::{DEFAULT_RULES, Rule};
+use crate::rule::{Rule, default_rules};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
@@ -19,7 +19,7 @@ pub struct Config {
     pub roots: Vec<Utf8PathBuf>,
     pub skip_paths: Vec<Utf8PathBuf>,
     pub mode: RunMode,
-    pub rules: &'static [Rule],
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct PreparedConfig {
     pub roots: Vec<Utf8PathBuf>,
     pub skip_paths: Vec<Utf8PathBuf>,
     pub mode: RunMode,
-    pub rules: &'static [Rule],
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,7 +46,7 @@ impl Config {
             roots,
             skip_paths,
             mode,
-            rules: DEFAULT_RULES,
+            rules: default_rules(),
         }
     }
 
@@ -68,7 +68,7 @@ impl Config {
             roots,
             skip_paths: prepare_paths(&self.skip_paths, cwd),
             mode: self.mode,
-            rules: self.rules,
+            rules: self.rules.clone(),
         })
     }
 }

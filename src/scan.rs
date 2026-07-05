@@ -18,7 +18,7 @@ pub struct ScanReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DependencyMatch {
     pub path: Utf8PathBuf,
-    pub rule_id: &'static str,
+    pub rule_id: String,
     pub target: Target,
     pub evidence: Vec<MatchedEvidence>,
 }
@@ -71,7 +71,7 @@ pub fn scan(config: &PreparedConfig) -> Result<ScanReport, ScanError> {
 }
 
 pub fn rules(config: &PreparedConfig) -> &[Rule] {
-    config.rules
+    &config.rules
 }
 
 fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) {
@@ -146,7 +146,7 @@ fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) 
             continue;
         }
 
-        let (dependency_match, failures) = match_dependency(&path, config.rules);
+        let (dependency_match, failures) = match_dependency(&path, &config.rules);
         report.failures.extend(failures);
 
         if let Some(dependency_match) = dependency_match {
@@ -163,7 +163,7 @@ fn match_dependency(
     let mut failures = Vec::new();
 
     for rule in rules {
-        for rule_case in rule.cases {
+        for rule_case in &rule.cases {
             let Some(target) = matching_target(candidate_path, rule_case) else {
                 continue;
             };
@@ -172,8 +172,8 @@ fn match_dependency(
             let mut case_failures = Vec::new();
             let mut requirements_satisfied = true;
 
-            for requirement in rule_case.requirements {
-                match satisfy_requirement(candidate_path, requirement.any_of) {
+            for requirement in &rule_case.requirements {
+                match satisfy_requirement(candidate_path, &requirement.any_of) {
                     RequirementResult::Satisfied(evidence) => matched_evidence.push(evidence),
                     RequirementResult::Unsatisfied { failures } => {
                         requirements_satisfied = false;
@@ -187,7 +187,7 @@ fn match_dependency(
                 return (
                     Some(DependencyMatch {
                         path: candidate_path.to_path_buf(),
-                        rule_id: rule.id,
+                        rule_id: rule.id.clone(),
                         target,
                         evidence: matched_evidence,
                     }),
@@ -203,17 +203,21 @@ fn match_dependency(
 }
 
 fn matching_target(candidate_path: &Utf8Path, rule_case: &RuleCase) -> Option<Target> {
-    rule_case.targets.iter().copied().find(|target| {
-        target.kind == TargetKind::Directory && target_matches(candidate_path, *target)
-    })
+    rule_case
+        .targets
+        .iter()
+        .find(|target| {
+            target.kind == TargetKind::Directory && target_matches(candidate_path, target)
+        })
+        .cloned()
 }
 
-fn target_matches(candidate_path: &Utf8Path, target: Target) -> bool {
+fn target_matches(candidate_path: &Utf8Path, target: &Target) -> bool {
     if target.path.contains('/') {
-        return candidate_path.ends_with(target.path);
+        return candidate_path.ends_with(&target.path);
     }
 
-    candidate_path.file_name() == Some(target.path)
+    candidate_path.file_name() == Some(target.path.as_str())
 }
 
 enum RequirementResult {
@@ -228,18 +232,12 @@ fn satisfy_requirement(
     let mut failures = Vec::new();
 
     for evidence in evidence_options {
-        let Some(path) = evidence.resolve_against(candidate_path) else {
-            failures.push(ScanFailure {
-                path: Some(candidate_path.to_path_buf()),
-                message: format!("cannot resolve evidence path `{}`", evidence.path),
-            });
-            continue;
-        };
+        let path = evidence.resolve_against(candidate_path);
 
         match evidence_exists(&path, evidence.kind) {
             Ok(true) => {
                 return RequirementResult::Satisfied(MatchedEvidence {
-                    evidence: *evidence,
+                    evidence: evidence.clone(),
                     path,
                 });
             }
@@ -290,31 +288,26 @@ mod tests {
     use crate::config::{Config, RunMode};
     use crate::rule::{EvidenceBase, Requirement};
 
-    const STRICT_RULES: &[Rule] = &[Rule {
-        id: "strict",
-        cases: &[RuleCase {
-            targets: &[Target {
-                path: ".strict-cache",
-                kind: TargetKind::Directory,
-            }],
-            requirements: &[
-                Requirement {
-                    any_of: &[Evidence {
-                        path: "strict.toml",
+    fn strict_rules() -> Vec<Rule> {
+        vec![Rule::new(
+            "strict",
+            vec![RuleCase::new(
+                vec![Target::directory(".strict-cache")],
+                vec![
+                    Requirement::any_of(vec![Evidence {
+                        path: "strict.toml".to_string(),
                         kind: EvidenceKind::File,
                         base: EvidenceBase::CandidateParent,
-                    }],
-                },
-                Requirement {
-                    any_of: &[Evidence {
-                        path: "strict.lock",
+                    }]),
+                    Requirement::any_of(vec![Evidence {
+                        path: "strict.lock".to_string(),
                         kind: EvidenceKind::File,
                         base: EvidenceBase::CandidateParent,
-                    }],
-                },
-            ],
-        }],
-    }];
+                    }]),
+                ],
+            )],
+        )]
+    }
 
     #[test]
     fn matches_node_modules_when_package_json_exists() {
@@ -322,7 +315,7 @@ mod tests {
         fixture.dir("project/node_modules");
         fixture.file("project/package.json");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].rule_id, "node");
@@ -335,7 +328,7 @@ mod tests {
         let fixture = Fixture::new();
         fixture.dir("project/node_modules");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert!(report.matches.is_empty());
         assert!(report.failures.is_empty());
@@ -347,7 +340,7 @@ mod tests {
         fixture.dir("project/venv");
         fixture.file("project/pyproject.toml");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].rule_id, "python-venv");
@@ -360,12 +353,12 @@ mod tests {
         fixture.dir("project/.strict-cache");
         fixture.file("project/strict.toml");
 
-        let report = scan_fixture(&fixture, STRICT_RULES, &[]);
+        let report = scan_fixture(&fixture, strict_rules(), &[]);
         assert!(report.matches.is_empty());
 
         fixture.file("project/strict.lock");
 
-        let report = scan_fixture(&fixture, STRICT_RULES, &[]);
+        let report = scan_fixture(&fixture, strict_rules(), &[]);
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].evidence.len(), 2);
     }
@@ -376,7 +369,7 @@ mod tests {
         fixture.dir("project/vendor");
         fixture.file("project/Gemfile");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].rule_id, "vendor");
@@ -391,7 +384,7 @@ mod tests {
         fixture.dir("second/target");
         fixture.file("second/Cargo.toml");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 2);
     }
@@ -403,7 +396,7 @@ mod tests {
         fixture.file("project/package.json");
         fixture.file("project/node_modules/nested/package.json");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].path, fixture.path("project/node_modules"));
@@ -418,7 +411,7 @@ mod tests {
         let skip_path = fixture.path("ignored");
         let report = scan_fixture(
             &fixture,
-            crate::rule::DEFAULT_RULES,
+            crate::rule::default_rules(),
             std::slice::from_ref(&skip_path),
         );
 
@@ -438,7 +431,7 @@ mod tests {
             roots: vec![Utf8PathBuf::from("project")],
             skip_paths: Vec::new(),
             mode: RunMode::DryRun,
-            rules: crate::rule::DEFAULT_RULES,
+            rules: crate::rule::default_rules(),
         }
         .prepare_with_cwd(&fixture.root())
         .unwrap();
@@ -460,7 +453,7 @@ mod tests {
             roots: vec![Utf8PathBuf::from(".")],
             skip_paths: vec![Utf8PathBuf::from("project")],
             mode: RunMode::DryRun,
-            rules: crate::rule::DEFAULT_RULES,
+            rules: crate::rule::default_rules(),
         }
         .prepare_with_cwd(&fixture.root())
         .unwrap();
@@ -480,7 +473,7 @@ mod tests {
 
         let report = scan_fixture(
             &fixture,
-            crate::rule::DEFAULT_RULES,
+            crate::rule::default_rules(),
             &[fixture.path("project")],
         );
 
@@ -502,7 +495,7 @@ mod tests {
             roots: vec![fixture.path("missing"), fixture.path("project")],
             skip_paths: Vec::new(),
             mode: RunMode::DryRun,
-            rules: crate::rule::DEFAULT_RULES,
+            rules: crate::rule::default_rules(),
         }
         .prepare()
         .unwrap();
@@ -525,7 +518,7 @@ mod tests {
             roots: vec![fixture.path("linked")],
             skip_paths: Vec::new(),
             mode: RunMode::DryRun,
-            rules: crate::rule::DEFAULT_RULES,
+            rules: crate::rule::default_rules(),
         };
         let config = config.prepare().unwrap();
         let report = scan(&config).unwrap();
@@ -543,7 +536,7 @@ mod tests {
         fixture.file("project/package.json");
         unix_fs::symlink(fixture.path("real"), fixture.path("linked")).unwrap();
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].path, fixture.path("project/node_modules"));
@@ -557,7 +550,7 @@ mod tests {
         fixture.dir("project with spaces/node_modules");
         fixture.file("project with spaces/package.json");
 
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
         assert_eq!(
@@ -575,7 +568,7 @@ mod tests {
         let blocked_path = fixture.path("blocked");
 
         fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o000)).unwrap();
-        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
         fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o700)).unwrap();
 
         assert_eq!(report.matches.len(), 1);
@@ -587,13 +580,10 @@ mod tests {
 
     #[test]
     fn matches_relative_candidate_paths() {
-        let target = Target {
-            path: "target",
-            kind: TargetKind::Directory,
-        };
+        let target = Target::directory("target");
 
-        assert!(target_matches(Utf8Path::new("./target"), target));
-        assert!(target_matches(Utf8Path::new("target"), target));
+        assert!(target_matches(Utf8Path::new("./target"), &target));
+        assert!(target_matches(Utf8Path::new("target"), &target));
     }
 
     #[test]
@@ -602,15 +592,11 @@ mod tests {
 
         assert_eq!(
             evidence.resolve_against(Utf8Path::new("target")),
-            Some(Utf8PathBuf::from("Cargo.toml"))
+            Utf8PathBuf::from("Cargo.toml")
         );
     }
 
-    fn scan_fixture(
-        fixture: &Fixture,
-        rules: &'static [Rule],
-        skip_paths: &[Utf8PathBuf],
-    ) -> ScanReport {
+    fn scan_fixture(fixture: &Fixture, rules: Vec<Rule>, skip_paths: &[Utf8PathBuf]) -> ScanReport {
         let config = Config {
             roots: vec![fixture.root()],
             skip_paths: skip_paths.to_vec(),

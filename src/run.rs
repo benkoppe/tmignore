@@ -13,7 +13,7 @@ pub struct RunReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExclusionAction {
     pub path: Utf8PathBuf,
-    pub rule_id: &'static str,
+    pub rule_id: String,
     pub target: Target,
     pub evidence: Vec<MatchedEvidence>,
     pub outcome: ExclusionOutcome,
@@ -35,8 +35,8 @@ impl RunReport {
             .iter()
             .map(|dependency_match| ExclusionAction {
                 path: dependency_match.path.clone(),
-                rule_id: dependency_match.rule_id,
-                target: dependency_match.target,
+                rule_id: dependency_match.rule_id.clone(),
+                target: dependency_match.target.clone(),
                 evidence: dependency_match.evidence.clone(),
                 outcome: ExclusionOutcome::DryRun,
             })
@@ -69,8 +69,8 @@ impl RunReport {
 
                 ExclusionAction {
                     path: dependency_match.path.clone(),
-                    rule_id: dependency_match.rule_id,
-                    target: dependency_match.target,
+                    rule_id: dependency_match.rule_id.clone(),
+                    target: dependency_match.target.clone(),
                     evidence: dependency_match.evidence.clone(),
                     outcome,
                 }
@@ -99,7 +99,7 @@ mod tests {
     use camino::{Utf8Path, Utf8PathBuf};
 
     use super::*;
-    use crate::rule::{Evidence, EvidenceKind, TargetKind};
+    use crate::rule::{Evidence, EvidenceKind};
     use crate::scan::{DependencyMatch, MatchedEvidence};
 
     #[test]
@@ -184,14 +184,11 @@ mod tests {
         }
     }
 
-    fn dependency_match(path: &'static str, rule_id: &'static str) -> DependencyMatch {
+    fn dependency_match(path: &str, rule_id: &str) -> DependencyMatch {
         DependencyMatch {
             path: Utf8PathBuf::from(path),
-            rule_id,
-            target: Target {
-                path: "target",
-                kind: TargetKind::Directory,
-            },
+            rule_id: rule_id.to_string(),
+            target: Target::directory("target"),
             evidence: vec![MatchedEvidence {
                 evidence: Evidence::candidate_parent("Cargo.toml", EvidenceKind::File),
                 path: Utf8PathBuf::from("/tmp/project/Cargo.toml"),
