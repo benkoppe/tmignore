@@ -4,7 +4,7 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use walkdir::WalkDir;
 
-use crate::config::Config;
+use crate::config::PreparedConfig;
 use crate::rule::{Evidence, EvidenceKind, Rule, RuleCase, Target, TargetKind};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -53,7 +53,7 @@ pub enum ScanError {
     MissingRoot,
 }
 
-pub fn scan(config: &Config) -> Result<ScanReport, ScanError> {
+pub fn scan(config: &PreparedConfig) -> Result<ScanReport, ScanError> {
     if config.roots.is_empty() {
         return Err(ScanError::MissingRoot);
     }
@@ -70,11 +70,11 @@ pub fn scan(config: &Config) -> Result<ScanReport, ScanError> {
     Ok(report)
 }
 
-pub fn rules(config: &Config) -> &[Rule] {
+pub fn rules(config: &PreparedConfig) -> &[Rule] {
     config.rules
 }
 
-fn scan_root(root: &Utf8Path, config: &Config, report: &mut ScanReport) {
+fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) {
     match fs_err::symlink_metadata(root) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             report.skipped.push(SkippedPath {
@@ -287,7 +287,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::config::RunMode;
+    use crate::config::{Config, RunMode};
     use crate::rule::{EvidenceBase, Requirement};
 
     const STRICT_RULES: &[Rule] = &[Rule {
@@ -429,6 +429,92 @@ mod tests {
     }
 
     #[test]
+    fn scans_relative_roots_after_preparation() {
+        let fixture = Fixture::new();
+        fixture.dir("project/node_modules");
+        fixture.file("project/package.json");
+
+        let config = Config {
+            roots: vec![Utf8PathBuf::from("project")],
+            skip_paths: Vec::new(),
+            mode: RunMode::DryRun,
+            rules: crate::rule::DEFAULT_RULES,
+        }
+        .prepare_with_cwd(&fixture.root())
+        .unwrap();
+
+        let report = scan(&config).unwrap();
+
+        assert_eq!(report.roots, vec![fixture.path("project")]);
+        assert_eq!(report.matches.len(), 1);
+        assert_eq!(report.matches[0].path, fixture.path("project/node_modules"));
+    }
+
+    #[test]
+    fn applies_relative_skip_paths_after_preparation() {
+        let fixture = Fixture::new();
+        fixture.dir("project/node_modules");
+        fixture.file("project/package.json");
+
+        let config = Config {
+            roots: vec![Utf8PathBuf::from(".")],
+            skip_paths: vec![Utf8PathBuf::from("project")],
+            mode: RunMode::DryRun,
+            rules: crate::rule::DEFAULT_RULES,
+        }
+        .prepare_with_cwd(&fixture.root())
+        .unwrap();
+
+        let report = scan(&config).unwrap();
+
+        assert!(report.matches.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, fixture.path("project"));
+    }
+
+    #[test]
+    fn skip_paths_do_not_match_same_prefix_siblings() {
+        let fixture = Fixture::new();
+        fixture.dir("project-other/node_modules");
+        fixture.file("project-other/package.json");
+
+        let report = scan_fixture(
+            &fixture,
+            crate::rule::DEFAULT_RULES,
+            &[fixture.path("project")],
+        );
+
+        assert_eq!(report.matches.len(), 1);
+        assert_eq!(
+            report.matches[0].path,
+            fixture.path("project-other/node_modules")
+        );
+        assert!(report.skipped.is_empty());
+    }
+
+    #[test]
+    fn nonexistent_roots_report_failures_without_aborting_other_roots() {
+        let fixture = Fixture::new();
+        fixture.dir("project/node_modules");
+        fixture.file("project/package.json");
+
+        let config = Config {
+            roots: vec![fixture.path("missing"), fixture.path("project")],
+            skip_paths: Vec::new(),
+            mode: RunMode::DryRun,
+            rules: crate::rule::DEFAULT_RULES,
+        }
+        .prepare()
+        .unwrap();
+
+        let report = scan(&config).unwrap();
+
+        assert_eq!(report.matches.len(), 1);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].path, Some(fixture.path("missing")));
+    }
+
+    #[test]
     fn does_not_follow_symlinks() {
         let fixture = Fixture::new();
         fixture.dir("real/project/node_modules");
@@ -441,6 +527,7 @@ mod tests {
             mode: RunMode::DryRun,
             rules: crate::rule::DEFAULT_RULES,
         };
+        let config = config.prepare().unwrap();
         let report = scan(&config).unwrap();
 
         assert!(report.matches.is_empty());
@@ -530,6 +617,7 @@ mod tests {
             mode: RunMode::DryRun,
             rules,
         };
+        let config = config.prepare().unwrap();
 
         scan(&config).unwrap()
     }

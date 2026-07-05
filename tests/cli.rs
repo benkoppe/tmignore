@@ -25,6 +25,25 @@ fn dry_run_reports_matched_dependency_directory() {
         );
 }
 
+#[test]
+fn dry_run_reports_prepared_roots() {
+    let fixture = Fixture::new();
+    fixture.dir("project/node_modules");
+    fixture.file("project/package.json");
+    let root = fixture.path_string("project/..");
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .args(["--root", root.as_str()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "Scanning 1 root:\n- {}",
+            fixture.root()
+        )));
+}
+
 #[cfg(unix)]
 #[test]
 fn dry_run_groups_skipped_paths_by_default() {
