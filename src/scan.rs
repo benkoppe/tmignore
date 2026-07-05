@@ -281,7 +281,8 @@ fn path_to_utf8(path: &Path) -> Option<Utf8PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs as unix_fs;
+    use std::fs::Permissions;
+    use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 
     use tempfile::TempDir;
 
@@ -475,6 +476,25 @@ mod tests {
             report.matches[0].path,
             fixture.path("project with spaces/node_modules")
         );
+    }
+
+    #[test]
+    fn records_unreadable_directory_failures_without_aborting() {
+        let fixture = Fixture::new();
+        fixture.dir("blocked/child");
+        fixture.dir("project/node_modules");
+        fixture.file("project/package.json");
+        let blocked_path = fixture.path("blocked");
+
+        fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o000)).unwrap();
+        let report = scan_fixture(&fixture, crate::rule::DEFAULT_RULES, &[]);
+        fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o700)).unwrap();
+
+        assert_eq!(report.matches.len(), 1);
+        assert!(report.failures.iter().any(|failure| {
+            failure.path.as_ref() == Some(&blocked_path)
+                && failure.message.contains("Permission denied")
+        }));
     }
 
     #[test]

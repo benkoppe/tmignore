@@ -52,6 +52,35 @@ fn dry_run_groups_skipped_paths_by_default() {
 
 #[cfg(unix)]
 #[test]
+fn dry_run_does_not_group_skipped_paths_by_broad_root_child() {
+    let fixture = Fixture::new();
+    fixture.dir("real/one");
+    fixture.dir("real/two");
+    fixture.dir("Developer/forks/opencode/.direnv");
+    fixture.dir("Developer/forks/opentui/.direnv");
+    fixture.symlink("real/one", "Developer/forks/opencode/.direnv/first");
+    fixture.symlink("real/two", "Developer/forks/opencode/.direnv/second");
+    fixture.symlink("real/one", "Developer/forks/opentui/.direnv/first");
+    fixture.symlink("real/two", "Developer/forks/opentui/.direnv/second");
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+    let root = fixture.path_string("Developer");
+
+    command
+        .args(["--root", root.as_str(), "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("forks/opencode/.direnv  2 symlinks skipped below this path")
+                .and(predicate::str::contains(
+                    "forks/opentui/.direnv  2 symlinks skipped below this path",
+                ))
+                .and(predicate::str::contains("forks  4 symlinks skipped below this path").not()),
+        );
+}
+
+#[cfg(unix)]
+#[test]
 fn dry_run_verbose_lists_every_skipped_path() {
     let fixture = Fixture::new();
     fixture.dir("real/first");
@@ -91,6 +120,10 @@ impl Fixture {
 
     fn path(&self, path: &str) -> std::path::PathBuf {
         self.temp_dir.path().join(path)
+    }
+
+    fn path_string(&self, path: &str) -> String {
+        self.path(path).to_str().unwrap().to_string()
     }
 
     fn dir(&self, path: &str) {

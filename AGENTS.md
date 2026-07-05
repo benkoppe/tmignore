@@ -216,6 +216,8 @@ Important test areas include:
 
 Use test doubles around the `tmutil` boundary rather than invoking real Time Machine operations in ordinary unit tests. Real macOS integration tests may be useful, but they should be opt-in and carefully documented.
 
+Do not verify scanner or CLI behavior by running `tmignore` against real workspace roots such as `.`, `..`, `$HOME`, or `/` unless the user explicitly requests that exact command. Even dry-run scans traverse the filesystem, can expose private paths in logs, and can hit real permission boundaries. Use `tempfile` or other isolated fixtures for scanner and CLI verification. If a broad-root behavior needs coverage, reproduce it with a synthetic temporary directory tree.
+
 ## Naming
 
 Use `tmignore` as the project/product name going forward. Avoid introducing public-facing references to `asimov-rs` except where unavoidable during repository transition.
