@@ -117,8 +117,8 @@ path = ".cargo/registry/custom"
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Scan:")
-                .and(predicate::str::contains("Global:"))
+            predicate::str::contains("== tmignore scan ==")
+                .and(predicate::str::contains("== tmignore global =="))
                 .and(predicate::str::contains("Scan summary:"))
                 .and(predicate::str::contains("Global summary:"))
                 .and(predicate::str::contains("    matched: node.node-modules"))

@@ -94,9 +94,13 @@ pub fn render_all_human_report(
     let mut output = String::new();
 
     render_mode_notice(&mut output, options.mode)?;
-    writeln!(output, "Scan:")?;
+    writeln!(output)?;
+    writeln!(output, "== tmignore scan ==")?;
+    writeln!(output)?;
     render_scan_body(&mut output, scan_report, options, "Scan summary:")?;
-    writeln!(output, "Global:")?;
+    writeln!(output)?;
+    writeln!(output, "== tmignore global ==")?;
+    writeln!(output)?;
     render_global_section(&mut output, global_report, options, "Global summary:")?;
 
     Ok(output)
