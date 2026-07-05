@@ -57,10 +57,16 @@ To apply Time Machine exclusions, opt in explicitly:
 services.tmignore.mode = "apply";
 ```
 
-The launchd job runs `tmignore all` by default, which combines project scanning with global dependency/cache directory exclusions. To run only the project scanner from nix-darwin:
+The launchd job runs `tmignore all` by default, which combines project scanning with global dependency/cache directory exclusions. To choose a different scheduled command:
 
 ```nix
-services.tmignore.global.enable = false;
+services.tmignore.command = "scan";
+```
+
+For global cache targets only:
+
+```nix
+services.tmignore.command = "global";
 ```
 
 For laptops, `runAtLoad` can catch cases where the machine was asleep or off during a scheduled time:

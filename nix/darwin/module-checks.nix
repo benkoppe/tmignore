@@ -90,16 +90,22 @@ let
   scanOnly = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
+    command = "scan";
     scan.roots = [ "/Users/alice/Developer" ];
-    global.enable = false;
   };
 
   scanOnlyWithInvalidGlobalExtraTarget = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
+    command = "scan";
     scan.roots = [ "/Users/alice/Developer" ];
-    global.enable = false;
     global.extraTargets.bad.path = "Documents/project";
+  };
+
+  globalOnly = evalDarwin {
+    enable = true;
+    package = self'.packages.tmignore;
+    command = "global";
   };
 
   invalidSchedule = builtins.tryEval (
@@ -166,11 +172,33 @@ let
     global.extraTargets.bad.path = "~/.cargo/registry";
   });
 
+  unknownDisabledGlobalRule = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.disabledBuiltinRules = [ "missing.rule" ];
+  });
+
+  invalidGlobalExtraTargetName = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.extraTargets."bad rule".path = ".cargo/registry/custom";
+  });
+
+  collidingGlobalExtraTargetName = builtins.tryEval (evalSystem {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.extraTargets."cargo.registry".path = ".cargo/registry/custom";
+  });
+
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
   extraTargetsAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
   scanOnlyAgent = scanOnly.config.launchd.user.agents.tmignore.serviceConfig;
   scanOnlyInvalidGlobalAgent = scanOnlyWithInvalidGlobalExtraTarget.config.launchd.user.agents.tmignore.serviceConfig;
+  globalOnlyAgent = globalOnly.config.launchd.user.agents.tmignore.serviceConfig;
 
   dryRunConfig = builtins.elemAt dryRunAgent.ProgramArguments 3;
   applyConfig = builtins.elemAt applyAgent.ProgramArguments 3;
@@ -190,6 +218,9 @@ in
     test "${if invalidGlobalExtraPath.success then "true" else "false"}" = "false"
     test "${if absoluteGlobalExtraPath.success then "true" else "false"}" = "false"
     test "${if tildeGlobalExtraPath.success then "true" else "false"}" = "false"
+    test "${if unknownDisabledGlobalRule.success then "true" else "false"}" = "false"
+    test "${if invalidGlobalExtraTargetName.success then "true" else "false"}" = "false"
+    test "${if collidingGlobalExtraTargetName.success then "true" else "false"}" = "false"
 
     test "${builtins.elemAt dryRunAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
     test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "all"
@@ -217,6 +248,7 @@ in
 
     test "${builtins.elemAt scanOnlyAgent.ProgramArguments 1}" = "scan"
     test "${builtins.elemAt scanOnlyInvalidGlobalAgent.ProgramArguments 1}" = "scan"
+    test "${builtins.elemAt globalOnlyAgent.ProgramArguments 1}" = "global"
 
     grep -q '\[scan\]' '${dryRunConfig}'
     grep -q 'roots = \["/Users/alice/Developer"\]' '${dryRunConfig}'

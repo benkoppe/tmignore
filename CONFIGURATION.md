@@ -10,7 +10,7 @@ Paths are passed directly to `tmignore`; they are not interpreted by a shell. Do
 
 `tmignore global` checks configured home/global cache paths without walking filesystem roots.
 
-`tmignore all` runs `scan` and then `global` in one process and report. The nix-darwin module uses `all` by default and switches to `scan` when `services.tmignore.global.enable = false`.
+`tmignore all` runs `scan` and then `global` in one process and report. The nix-darwin module uses `all` by default. Set `services.tmignore.command` to choose `scan`, `global`, or `all` for scheduled runs.
 
 All commands default to dry-run mode. Use `--apply` to change Time Machine exclusions.
 
@@ -36,6 +36,7 @@ Shared options:
 | `services.tmignore.enable` | `false` | Enables the user launchd agent. |
 | `services.tmignore.package` | flake package | Package used for the scheduled binary. |
 | `services.tmignore.mode` | `"dry-run"` | `"dry-run"` or `"apply"`; apply adds `--apply` to launchd `ProgramArguments`. |
+| `services.tmignore.command` | `"all"` | Scheduled subcommand: `"scan"`, `"global"`, or `"all"`. |
 | `services.tmignore.schedule` | `[ { Hour = 3; Minute = 30; } ]` | launchd `StartCalendarInterval` values. |
 | `services.tmignore.runAtLoad` | `false` | Sets launchd `RunAtLoad`. |
 | `services.tmignore.stdoutPath` | `null` | Optional launchd `StandardOutPath`. |
@@ -45,7 +46,7 @@ Scan options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `services.tmignore.scan.roots` | `[]` | Absolute filesystem roots to scan. Required when the service is enabled. |
+| `services.tmignore.scan.roots` | `[]` | Absolute filesystem roots to scan. Required when `command` is `"scan"` or `"all"`. |
 | `services.tmignore.scan.skipPaths` | `[]` | Absolute paths to skip while scanning. |
 | `services.tmignore.scan.builtinRules` | `"defaults"` | Built-in project rule policy: `"defaults"` or `"none"`. |
 | `services.tmignore.scan.disabledBuiltinRules` | `[]` | Built-in project rule IDs to disable. |
@@ -55,7 +56,6 @@ Global options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `services.tmignore.global.enable` | `true` | Whether the scheduled job should also process global dependency/cache directories. |
 | `services.tmignore.global.builtinRules` | `"defaults"` | Built-in global rule policy: `"defaults"` or `"none"`. |
 | `services.tmignore.global.disabledBuiltinRules` | `[]` | Built-in global rule IDs to disable. |
 | `services.tmignore.global.extraTargets` | `{}` | Extra named global cache/VM targets under known namespaces. Paths resolve against the user's home directory. |
@@ -70,6 +70,7 @@ in
 {
   services.tmignore = {
     enable = true;
+    command = "all";
     mode = "apply";
     scan.roots = [ "${home}/Developer" ];
     scan.skipPaths = [ "${home}/Developer/archive" ];

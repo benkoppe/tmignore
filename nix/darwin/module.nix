@@ -130,14 +130,41 @@ let
 
   programArguments = [
     (lib.getExe cfg.package)
-    (if globalCfg.enable then "all" else "scan")
+    cfg.command
     "--config"
     "${tmignoreConfig}"
   ] ++ lib.optional (cfg.mode == "apply") "--apply";
 
   isAbsolutePath = path: lib.hasPrefix "/" path;
+  commandUsesScan = lib.elem cfg.command [
+    "scan"
+    "all"
+  ];
+  commandUsesGlobal = lib.elem cfg.command [
+    "global"
+    "all"
+  ];
   hasPathComponent = component: path: lib.elem component (lib.splitString "/" path);
   exactOrChildPath = prefix: path: path == prefix || lib.hasPrefix "${prefix}/" path;
+  isRuleId = id: id != "" && builtins.match "[A-Za-z0-9._-]+" id != null;
+  builtinGlobalRuleIds = [
+    "cargo.registry"
+    "cargo.git"
+    "rustup.toolchains"
+    "go.module-cache"
+    "gradle.caches"
+    "maven.repository"
+    "npm.cache"
+    "pnpm.store"
+    "bun.install-cache"
+    "composer.cache"
+    "ivy.cache"
+    "cocoapods.repos"
+    "vagrant.boxes"
+    "terraform.plugin-cache"
+    "xcode.derived-data"
+    "ollama.models"
+  ];
   allowedGlobalCachePrefixes = [
     ".cargo/registry"
     ".cargo/git"
@@ -187,6 +214,16 @@ in
       ];
       default = "dry-run";
       description = "Whether scheduled runs only report matches or apply Time Machine exclusions.";
+    };
+
+    command = lib.mkOption {
+      type = lib.types.enum [
+        "scan"
+        "global"
+        "all"
+      ];
+      default = "all";
+      description = "tmignore subcommand to run from launchd.";
     };
 
     scan = {
@@ -245,13 +282,7 @@ in
       };
     };
 
-      global = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether the scheduled launchd job should also process global dependency/cache directories.";
-      };
-
+    global = {
       builtinRules = lib.mkOption {
         type = lib.types.enum [
           "defaults"
@@ -326,7 +357,7 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = scanCfg.roots != [ ];
+        assertion = !commandUsesScan || scanCfg.roots != [ ];
         message = "services.tmignore.scan.roots must contain at least one explicit scan root.";
       }
       {
@@ -338,8 +369,20 @@ in
         message = "services.tmignore.scan.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
       }
       {
-        assertion = !globalCfg.enable || lib.all isAllowedGlobalExtraPath (lib.mapAttrsToList (_: target: target.path) globalCfg.extraTargets);
+        assertion = !commandUsesGlobal || lib.all isAllowedGlobalExtraPath (lib.mapAttrsToList (_: target: target.path) globalCfg.extraTargets);
         message = "services.tmignore.global.extraTargets paths must be home-relative paths under a known cache namespace.";
+      }
+      {
+        assertion = !commandUsesGlobal || lib.all (ruleId: lib.elem ruleId builtinGlobalRuleIds) globalCfg.disabledBuiltinRules;
+        message = "services.tmignore.global.disabledBuiltinRules must contain known built-in global rule IDs.";
+      }
+      {
+        assertion = !commandUsesGlobal || lib.all isRuleId (lib.attrNames globalCfg.extraTargets);
+        message = "services.tmignore.global.extraTargets names must contain only ASCII letters, numbers, `.`, `_`, or `-`.";
+      }
+      {
+        assertion = !commandUsesGlobal || lib.all (ruleId: !(lib.elem ruleId builtinGlobalRuleIds)) (lib.attrNames globalCfg.extraTargets);
+        message = "services.tmignore.global.extraTargets names must not collide with built-in global rule IDs.";
       }
     ];
 

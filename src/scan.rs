@@ -1,11 +1,11 @@
-use std::io;
 use std::path::Path;
+use std::{env, io};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use walkdir::WalkDir;
 
 use crate::config::PreparedConfig;
-use crate::rule::{Evidence, EvidenceKind, Rule, RuleCase, Target, TargetKind};
+use crate::rule::{Evidence, EvidenceBase, EvidenceKind, Rule, RuleCase, Target, TargetKind};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ScanReport {
@@ -71,6 +71,24 @@ pub fn scan(config: &PreparedConfig) -> Result<ScanReport, ScanError> {
 }
 
 fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) {
+    match scan_root_symlink_component(root) {
+        Ok(Some(path)) => {
+            report.skipped.push(SkippedPath {
+                path,
+                reason: SkipReason::Symlink,
+            });
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            report.failures.push(ScanFailure {
+                path: Some(root.to_path_buf()),
+                message: error.to_string(),
+            });
+            return;
+        }
+    }
+
     match fs_err::symlink_metadata(root) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             report.skipped.push(SkippedPath {
@@ -79,7 +97,14 @@ fn scan_root(root: &Utf8Path, config: &PreparedConfig, report: &mut ScanReport) 
             });
             return;
         }
-        Ok(_) => {}
+        Ok(metadata) if metadata.file_type().is_dir() => {}
+        Ok(_) => {
+            report.failures.push(ScanFailure {
+                path: Some(root.to_path_buf()),
+                message: "scan root is not a directory".to_string(),
+            });
+            return;
+        }
         Err(error) => {
             report.failures.push(ScanFailure {
                 path: Some(root.to_path_buf()),
@@ -231,7 +256,9 @@ fn satisfy_requirement(
     for evidence in evidence_options {
         let path = evidence.resolve_against_target(candidate_path, &target.path);
 
-        match evidence_exists(&path, evidence.kind) {
+        let symlink_base = evidence_symlink_base(candidate_path, &target.path, evidence);
+
+        match evidence_exists(&path, evidence.kind, symlink_base) {
             Ok(true) => {
                 return RequirementResult::Satisfied(MatchedEvidence {
                     evidence: evidence.clone(),
@@ -249,7 +276,17 @@ fn satisfy_requirement(
     RequirementResult::Unsatisfied { failures }
 }
 
-fn evidence_exists(path: &Utf8Path, kind: EvidenceKind) -> io::Result<bool> {
+fn evidence_exists(
+    path: &Utf8Path,
+    kind: EvidenceKind,
+    symlink_base: &Utf8Path,
+) -> io::Result<bool> {
+    if let Some(symlink_path) = symlink_component_between(symlink_base, path, false)? {
+        return Err(io::Error::other(format!(
+            "path contains symlink: {symlink_path}"
+        )));
+    }
+
     match fs_err::symlink_metadata(path) {
         Ok(metadata) => {
             let file_type = metadata.file_type();
@@ -262,6 +299,78 @@ fn evidence_exists(path: &Utf8Path, kind: EvidenceKind) -> io::Result<bool> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+fn scan_root_symlink_component(root: &Utf8Path) -> io::Result<Option<Utf8PathBuf>> {
+    let Some(home) = env::home_dir().and_then(|path| Utf8PathBuf::from_path_buf(path).ok()) else {
+        return Ok(None);
+    };
+
+    if root.starts_with(&home) {
+        symlink_component_between(&home, root, true)
+    } else {
+        Ok(None)
+    }
+}
+
+fn symlink_component_between(
+    base: &Utf8Path,
+    path: &Utf8Path,
+    include_base: bool,
+) -> io::Result<Option<Utf8PathBuf>> {
+    let Ok(relative_path) = path.strip_prefix(base) else {
+        return Ok(None);
+    };
+    let mut current = base.to_path_buf();
+
+    if include_base {
+        match fs_err::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Ok(Some(current)),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        }
+    }
+
+    for component in relative_path.components() {
+        match component.as_str() {
+            "/" | "." => continue,
+            component => current.push(component),
+        }
+
+        match fs_err::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Ok(Some(current.clone())),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(None)
+}
+
+fn evidence_symlink_base<'a>(
+    candidate_path: &'a Utf8Path,
+    target_path: &str,
+    evidence: &Evidence,
+) -> &'a Utf8Path {
+    match evidence.base {
+        EvidenceBase::Candidate => candidate_path,
+        EvidenceBase::CandidateParent => candidate_path
+            .parent()
+            .unwrap_or_else(|| Utf8Path::new(".")),
+        EvidenceBase::TargetParent => target_parent(candidate_path, target_path),
+    }
+}
+
+fn target_parent<'a>(candidate_path: &'a Utf8Path, target_path: &str) -> &'a Utf8Path {
+    let mut parent = candidate_path;
+
+    for _ in Utf8Path::new(target_path).components() {
+        parent = parent.parent().unwrap_or_else(|| Utf8Path::new("."));
+    }
+
+    parent
 }
 
 fn should_skip_path(path: &Utf8Path, skip_paths: &[Utf8PathBuf]) -> bool {
@@ -574,6 +683,33 @@ mod tests {
     }
 
     #[test]
+    fn file_roots_report_failures_without_aborting_other_roots() {
+        let fixture = Fixture::new();
+        fixture.file("not-a-directory");
+        fixture.dir("project/node_modules");
+        fixture.file("project/package.json");
+
+        let config = Config {
+            roots: vec![fixture.path("not-a-directory"), fixture.path("project")],
+            skip_paths: Vec::new(),
+            mode: RunMode::DryRun,
+            rules: crate::rule::default_rules(),
+        }
+        .prepare()
+        .unwrap();
+
+        let report = scan(&config).unwrap();
+
+        assert_eq!(report.matches.len(), 1);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(
+            report.failures[0].path,
+            Some(fixture.path("not-a-directory"))
+        );
+        assert!(report.failures[0].message.contains("not a directory"));
+    }
+
+    #[test]
     fn does_not_follow_symlinks() {
         let fixture = Fixture::new();
         fixture.dir("real/project/node_modules");
@@ -592,6 +728,53 @@ mod tests {
         assert!(report.matches.is_empty());
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.skipped[0].reason, SkipReason::Symlink);
+    }
+
+    #[test]
+    fn detects_intermediate_symlink_components_below_a_base_path() {
+        let fixture = Fixture::new();
+        fixture.dir("real-root/project/node_modules");
+        fixture.file("real-root/project/package.json");
+        unix_fs::symlink(fixture.path("real-root"), fixture.path("linked-root")).unwrap();
+
+        let symlink =
+            symlink_component_between(&fixture.root(), &fixture.path("linked-root/project"), false)
+                .unwrap();
+
+        assert_eq!(symlink, Some(fixture.path("linked-root")));
+    }
+
+    #[test]
+    fn symlinked_evidence_paths_do_not_satisfy_requirements() {
+        let fixture = Fixture::new();
+        fixture.dir("project/node_modules");
+        fixture.dir("real-evidence");
+        fixture.file("real-evidence/package.json");
+        unix_fs::symlink(
+            fixture.path("real-evidence"),
+            fixture.path("project/evidence-link"),
+        )
+        .unwrap();
+
+        let rules = vec![Rule::new(
+            "linked-evidence",
+            vec![RuleCase::new(
+                vec![Target::directory("node_modules")],
+                vec![Requirement::any_of(vec![Evidence::candidate_parent(
+                    "evidence-link/package.json",
+                    EvidenceKind::File,
+                )])],
+            )],
+        )];
+        let report = scan_fixture(&fixture, rules, &[]);
+
+        assert!(report.matches.is_empty());
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(
+            report.failures[0].path,
+            Some(fixture.path("project/evidence-link/package.json"))
+        );
+        assert!(report.failures[0].message.contains("path contains symlink"));
     }
 
     #[test]
