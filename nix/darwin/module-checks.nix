@@ -24,9 +24,9 @@ let
   enabledDryRun = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "/Users/alice/Developer" ];
-    skipPaths = [ "/Users/alice/Developer/archive" ];
-    disabledBuiltinRules = [ "node.parcel-cache" ];
+    scan.roots = [ "/Users/alice/Developer" ];
+    scan.skipPaths = [ "/Users/alice/Developer/archive" ];
+    scan.disabledBuiltinRules = [ "node.parcel-cache" ];
     stdoutPath = "/tmp/tmignore.log";
     stderrPath = "/tmp/tmignore.error.log";
   };
@@ -38,7 +38,7 @@ let
   enabledApply = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "/Users/alice/Developer" ];
+    scan.roots = [ "/Users/alice/Developer" ];
     mode = "apply";
     schedule = [
       {
@@ -56,9 +56,9 @@ let
   withExtraRules = evalDarwin {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "/Users/alice/Developer" ];
-    builtinRules = "none";
-    extraRules.pnpm_store = {
+    scan.roots = [ "/Users/alice/Developer" ];
+    scan.builtinRules = "none";
+    scan.extraRules.pnpm_store = {
       cases = [
         {
           targets = [
@@ -81,13 +81,22 @@ let
         }
       ];
     };
+    global.builtinRules = "none";
+    global.extraRules.custom_cache.path = ".custom-cache";
+  };
+
+  scanOnly = evalDarwin {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.enable = false;
   };
 
   invalidSchedule = builtins.tryEval (
     (evalDarwin {
       enable = true;
       package = self'.packages.tmignore;
-      roots = [ "/Users/alice/Developer" ];
+      scan.roots = [ "/Users/alice/Developer" ];
       schedule = {
         Hour = 3;
         Minute = 30;
@@ -103,36 +112,37 @@ let
   relativeRoot = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "Developer" ];
+    scan.roots = [ "Developer" ];
   });
 
   tildeRoot = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "~/Developer" ];
+    scan.roots = [ "~/Developer" ];
   });
 
   relativeSkipPath = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "/Users/alice/Developer" ];
-    skipPaths = [ "archive" ];
+    scan.roots = [ "/Users/alice/Developer" ];
+    scan.skipPaths = [ "archive" ];
   });
 
   tildeSkipPath = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
-    roots = [ "/Users/alice/Developer" ];
-    skipPaths = [ "~/Developer/archive" ];
+    scan.roots = [ "/Users/alice/Developer" ];
+    scan.skipPaths = [ "~/Developer/archive" ];
   });
 
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
   extraRulesAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
+  scanOnlyAgent = scanOnly.config.launchd.user.agents.tmignore.serviceConfig;
 
-  dryRunConfig = builtins.elemAt dryRunAgent.ProgramArguments 2;
-  applyConfig = builtins.elemAt applyAgent.ProgramArguments 2;
-  extraRulesConfig = builtins.elemAt extraRulesAgent.ProgramArguments 2;
+  dryRunConfig = builtins.elemAt dryRunAgent.ProgramArguments 3;
+  applyConfig = builtins.elemAt applyAgent.ProgramArguments 3;
+  extraRulesConfig = builtins.elemAt extraRulesAgent.ProgramArguments 3;
 in
 {
   tmignore-darwin-module = pkgs.runCommand "tmignore-darwin-module-check" { } ''
@@ -147,9 +157,10 @@ in
     test "${if tildeSkipPath.success then "true" else "false"}" = "false"
 
     test "${builtins.elemAt dryRunAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
-    test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "--config"
-    test "${dryRunConfig}" = "${builtins.elemAt dryRunAgent.ProgramArguments 2}"
-    test "${toString (builtins.length dryRunAgent.ProgramArguments)}" = "3"
+    test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "all"
+    test "${builtins.elemAt dryRunAgent.ProgramArguments 2}" = "--config"
+    test "${dryRunConfig}" = "${builtins.elemAt dryRunAgent.ProgramArguments 3}"
+    test "${toString (builtins.length dryRunAgent.ProgramArguments)}" = "4"
     test "${toString ((builtins.elemAt dryRunAgent.StartCalendarInterval 0).Hour)}" = "3"
     test "${toString ((builtins.elemAt dryRunAgent.StartCalendarInterval 0).Minute)}" = "30"
     test "${toString (builtins.length dryRunAgent.StartCalendarInterval)}" = "1"
@@ -158,27 +169,34 @@ in
     test "${dryRunAgent.StandardErrorPath}" = "/tmp/tmignore.error.log"
 
     test "${builtins.elemAt applyAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
-    test "${builtins.elemAt applyAgent.ProgramArguments 1}" = "--config"
-    test "${applyConfig}" = "${builtins.elemAt applyAgent.ProgramArguments 2}"
-    test "${builtins.elemAt applyAgent.ProgramArguments 3}" = "--apply"
-    test "${toString (builtins.length applyAgent.ProgramArguments)}" = "4"
+    test "${builtins.elemAt applyAgent.ProgramArguments 1}" = "all"
+    test "${builtins.elemAt applyAgent.ProgramArguments 2}" = "--config"
+    test "${applyConfig}" = "${builtins.elemAt applyAgent.ProgramArguments 3}"
+    test "${builtins.elemAt applyAgent.ProgramArguments 4}" = "--apply"
+    test "${toString (builtins.length applyAgent.ProgramArguments)}" = "5"
     test "${toString ((builtins.elemAt applyAgent.StartCalendarInterval 0).Hour)}" = "9"
     test "${toString ((builtins.elemAt applyAgent.StartCalendarInterval 0).Minute)}" = "0"
     test "${toString ((builtins.elemAt applyAgent.StartCalendarInterval 1).Hour)}" = "17"
     test "${toString ((builtins.elemAt applyAgent.StartCalendarInterval 1).Minute)}" = "0"
     test "${if applyAgent.RunAtLoad then "true" else "false"}" = "true"
 
+    test "${builtins.elemAt scanOnlyAgent.ProgramArguments 1}" = "scan"
+
+    grep -q '\[scan\]' '${dryRunConfig}'
     grep -q 'roots = \["/Users/alice/Developer"\]' '${dryRunConfig}'
     grep -q 'skip_paths = \["/Users/alice/Developer/archive"\]' '${dryRunConfig}'
     grep -q 'builtin_rules = "defaults"' '${dryRunConfig}'
     grep -q 'disabled_builtin_rules = \["node.parcel-cache"\]' '${dryRunConfig}'
+    grep -q '\[global\]' '${dryRunConfig}'
 
     grep -q 'builtin_rules = "none"' '${extraRulesConfig}'
-    grep -q '\[\[extra_rules.pnpm_store.cases\]\]' '${extraRulesConfig}'
-    grep -q '\[\[extra_rules.pnpm_store.cases.targets\]\]' '${extraRulesConfig}'
-    grep -q '\[\[extra_rules.pnpm_store.cases.requirements.any_of\]\]' '${extraRulesConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases\]\]' '${extraRulesConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases.targets\]\]' '${extraRulesConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases.requirements.any_of\]\]' '${extraRulesConfig}'
     grep -q 'path = ".pnpm-store"' '${extraRulesConfig}'
     grep -q 'base = "candidate_parent"' '${extraRulesConfig}'
+    grep -q '\[global.extra_rules.custom_cache\]' '${extraRulesConfig}'
+    grep -q 'path = ".custom-cache"' '${extraRulesConfig}'
 
     touch $out
   '';

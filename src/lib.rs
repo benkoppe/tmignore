@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod cli;
 pub mod config;
+pub mod global;
 pub mod report;
 pub mod rule;
 pub mod run;
@@ -10,7 +11,14 @@ pub use backend::{
     BackendDiagnostic, CommandOutput, CommandRunner, ExclusionChange, ExclusionStatus,
     ProcessCommandRunner, TimeMachineBackend, TmutilBackend,
 };
-pub use config::{BuiltinRuleMode, Config, ConfigError, PreparedConfig, RunMode};
+pub use config::{
+    AppConfig, BuiltinRuleMode, Config, ConfigError, GlobalConfig, PreparedConfig,
+    PreparedGlobalConfig, RunMode,
+};
+pub use global::{
+    GlobalAbsent, GlobalAction, GlobalFailure, GlobalMatch, GlobalRule, GlobalRunReport,
+    GlobalScanReport, GlobalSkipReason, GlobalSkipped, default_global_rules, scan_global,
+};
 pub use rule::{
     Evidence, EvidenceBase, EvidenceKind, Requirement, Rule, RuleCase, Target, TargetKind,
     default_rules,

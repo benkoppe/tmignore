@@ -4,6 +4,7 @@ use std::fmt::{self, Write};
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::config::RunMode;
+use crate::global::{GlobalAction, GlobalRunReport, GlobalSkipReason};
 use crate::run::{ExclusionAction, ExclusionOutcome, RunReport};
 use crate::scan::SkippedPath;
 use crate::scan::{ScanFailure, SkipReason};
@@ -68,13 +69,49 @@ pub fn render_human_report(
     let mut output = String::new();
 
     render_mode_notice(&mut output, options.mode)?;
-    render_roots(&mut output, report)?;
-    render_matches(&mut output, report, options.mode)?;
-    render_skipped(&mut output, report, options.verbosity)?;
-    render_failures(&mut output, report)?;
-    render_summary(&mut output, report)?;
+    render_scan_body(&mut output, report, options)?;
 
     Ok(output)
+}
+
+pub fn render_global_human_report(
+    report: &GlobalRunReport,
+    options: ReportOptions,
+) -> Result<String, fmt::Error> {
+    let mut output = String::new();
+
+    render_mode_notice(&mut output, options.mode)?;
+    render_global_section(&mut output, report, options)?;
+
+    Ok(output)
+}
+
+pub fn render_all_human_report(
+    scan_report: &RunReport,
+    global_report: &GlobalRunReport,
+    options: ReportOptions,
+) -> Result<String, fmt::Error> {
+    let mut output = String::new();
+
+    render_mode_notice(&mut output, options.mode)?;
+    writeln!(output, "Scan:")?;
+    render_scan_body(&mut output, scan_report, options)?;
+    writeln!(output, "Global:")?;
+    render_global_section(&mut output, global_report, options)?;
+
+    Ok(output)
+}
+
+fn render_scan_body(
+    output: &mut String,
+    report: &RunReport,
+    options: ReportOptions,
+) -> Result<(), fmt::Error> {
+    render_roots(output, report)?;
+    render_matches(output, report, options.mode)?;
+    render_skipped(output, report, options.verbosity)?;
+    render_failures(output, report)?;
+    render_summary(output, report)
 }
 
 fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
@@ -291,6 +328,166 @@ fn render_summary(output: &mut String, report: &RunReport) -> Result<(), fmt::Er
         report.scan.skipped.len(),
         report.scan.failures.len() + backend_failures(report).len()
     )
+}
+
+fn render_global_section(
+    output: &mut String,
+    report: &GlobalRunReport,
+    options: ReportOptions,
+) -> Result<(), fmt::Error> {
+    writeln!(output, "Global cache roots:")?;
+    writeln!(output, "- {}", report.scan.home)?;
+    writeln!(output)?;
+
+    render_global_matches(output, report, options.mode)?;
+    render_global_absent(output, report, options.verbosity)?;
+    render_global_skipped(output, report)?;
+    render_global_failures(output, report)?;
+    render_global_summary(output, report)
+}
+
+fn render_global_matches(
+    output: &mut String,
+    report: &GlobalRunReport,
+    mode: ReportMode,
+) -> Result<(), fmt::Error> {
+    writeln!(output, "Matched global caches:")?;
+
+    if report.actions.is_empty() {
+        writeln!(output, "- no matches")?;
+    } else {
+        for action in &report.actions {
+            writeln!(output, "- {}", action.path)?;
+            writeln!(output, "    matched: {}", action.rule_id)?;
+
+            if mode == ReportMode::Apply {
+                writeln!(output, "    action: {}", action_label(&action.outcome))?;
+            }
+        }
+    }
+
+    writeln!(output)
+}
+
+fn render_global_absent(
+    output: &mut String,
+    report: &GlobalRunReport,
+    verbosity: ReportVerbosity,
+) -> Result<(), fmt::Error> {
+    if report.scan.absent.is_empty() {
+        return Ok(());
+    }
+
+    match verbosity {
+        ReportVerbosity::Normal => writeln!(
+            output,
+            "Absent global caches: {} not present (use -v to list each path)",
+            report.scan.absent.len()
+        )?,
+        ReportVerbosity::Verbose | ReportVerbosity::Trace => {
+            writeln!(output, "Absent global caches:")?;
+            for absent in &report.scan.absent {
+                writeln!(output, "- {}  absent ({})", absent.path, absent.rule_id)?;
+            }
+        }
+    }
+
+    writeln!(output)
+}
+
+fn render_global_skipped(output: &mut String, report: &GlobalRunReport) -> Result<(), fmt::Error> {
+    if report.scan.skipped.is_empty() {
+        return Ok(());
+    }
+
+    writeln!(output, "Skipped global caches:")?;
+    for skipped in &report.scan.skipped {
+        writeln!(
+            output,
+            "- {}  skipped {} ({})",
+            skipped.path,
+            global_skip_reason_label(skipped.reason),
+            skipped.rule_id
+        )?;
+    }
+
+    writeln!(output)
+}
+
+fn render_global_failures(output: &mut String, report: &GlobalRunReport) -> Result<(), fmt::Error> {
+    if report.scan.failures.is_empty() && global_backend_failures(report).is_empty() {
+        return Ok(());
+    }
+
+    writeln!(output, "Global failures:")?;
+    for failure in &report.scan.failures {
+        writeln!(output, "- {}", failure.path)?;
+        writeln!(output, "  matched: {}", failure.rule_id)?;
+        writeln!(output, "  error: {}", failure.message)?;
+    }
+
+    for action in global_backend_failures(report) {
+        render_global_backend_failure(output, action)?;
+    }
+
+    writeln!(output)
+}
+
+fn render_global_backend_failure(
+    output: &mut String,
+    action: &GlobalAction,
+) -> Result<(), fmt::Error> {
+    let diagnostic = match &action.outcome {
+        ExclusionOutcome::StatusFailed(diagnostic) | ExclusionOutcome::AddFailed(diagnostic) => {
+            diagnostic
+        }
+        ExclusionOutcome::DryRun
+        | ExclusionOutcome::AlreadyExcluded
+        | ExclusionOutcome::NewlyExcluded => return Ok(()),
+    };
+
+    writeln!(output, "- {}", action.path)?;
+    writeln!(output, "  matched: {}", action.rule_id)?;
+    writeln!(output, "  error: {}", diagnostic.message)?;
+
+    if let Some(status_code) = diagnostic.status_code {
+        writeln!(output, "  status: {status_code}")?;
+    }
+
+    render_diagnostic_stream(output, "stdout", &diagnostic.stdout)?;
+    render_diagnostic_stream(output, "stderr", &diagnostic.stderr)
+}
+
+fn global_backend_failures(report: &GlobalRunReport) -> Vec<&GlobalAction> {
+    report
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.outcome,
+                ExclusionOutcome::StatusFailed(_) | ExclusionOutcome::AddFailed(_)
+            )
+        })
+        .collect()
+}
+
+fn render_global_summary(output: &mut String, report: &GlobalRunReport) -> Result<(), fmt::Error> {
+    writeln!(output, "Summary:")?;
+    writeln!(
+        output,
+        "{} matched, {} absent, {} skipped, {} failed",
+        report.actions.len(),
+        report.scan.absent.len(),
+        report.scan.skipped.len(),
+        report.scan.failures.len() + global_backend_failures(report).len()
+    )
+}
+
+fn global_skip_reason_label(reason: GlobalSkipReason) -> &'static str {
+    match reason {
+        GlobalSkipReason::Symlink => "symlink",
+        GlobalSkipReason::NotDirectory => "not a directory",
+    }
 }
 
 fn skip_reason_label(reason: &SkipReason) -> &'static str {

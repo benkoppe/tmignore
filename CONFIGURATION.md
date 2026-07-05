@@ -1,12 +1,20 @@
 # Configuration
 
-This is the full reference for the nix-darwin module and the TOML config file consumed by `tmignore --config`.
+This is the reference for the nix-darwin module and the TOML config file consumed by `tmignore --config`.
 
-Paths are passed directly to `tmignore`; they are not interpreted by a shell. Do not use `~` expecting home-directory expansion. Prefer absolute paths for scheduled nix-darwin runs.
+Paths are passed directly to `tmignore`; they are not interpreted by a shell. Do not use `~` expecting home-directory expansion. Prefer absolute scan paths for scheduled nix-darwin runs.
+
+## Commands
+
+`tmignore scan` walks configured project roots and applies project dependency/cache rules.
+
+`tmignore global` checks configured home/global cache paths without walking filesystem roots.
+
+`tmignore all` runs `scan` and then `global` in one process and report. The nix-darwin module uses `all` by default and switches to `scan` when `services.tmignore.global.enable = false`.
+
+All commands default to dry-run mode. Use `--apply` to change Time Machine exclusions.
 
 ## nix-darwin Module
-
-Import `tmignore.darwinModules.default` and configure `services.tmignore`:
 
 ```nix
 { config, ... }:
@@ -16,124 +24,43 @@ in
 {
   services.tmignore = {
     enable = true;
-    roots = [ "${home}/Developer" ];
+    scan.roots = [ "${home}/Developer" ];
   };
 }
 ```
 
-The module generates a TOML config in the Nix store and schedules a user launchd agent. It does not mutate project files.
+Shared options:
 
-### Options
+| Option | Default | Description |
+| --- | --- | --- |
+| `services.tmignore.enable` | `false` | Enables the user launchd agent. |
+| `services.tmignore.package` | flake package | Package used for the scheduled binary. |
+| `services.tmignore.mode` | `"dry-run"` | `"dry-run"` or `"apply"`; apply adds `--apply` to launchd `ProgramArguments`. |
+| `services.tmignore.schedule` | `[ { Hour = 3; Minute = 30; } ]` | launchd `StartCalendarInterval` values. |
+| `services.tmignore.runAtLoad` | `false` | Sets launchd `RunAtLoad`. |
+| `services.tmignore.stdoutPath` | `null` | Optional launchd `StandardOutPath`. |
+| `services.tmignore.stderrPath` | `null` | Optional launchd `StandardErrorPath`. |
 
-`services.tmignore.enable`
+Scan options:
 
-Type: boolean
+| Option | Default | Description |
+| --- | --- | --- |
+| `services.tmignore.scan.roots` | `[]` | Absolute filesystem roots to scan. Required when the service is enabled. |
+| `services.tmignore.scan.skipPaths` | `[]` | Absolute paths to skip while scanning. |
+| `services.tmignore.scan.builtinRules` | `"defaults"` | Built-in project rule policy: `"defaults"` or `"none"`. |
+| `services.tmignore.scan.disabledBuiltinRules` | `[]` | Built-in project rule IDs to disable. |
+| `services.tmignore.scan.extraRules` | `{}` | Extra structured project scan rules. |
 
-Default: `false`
+Global options:
 
-Enables the user launchd agent.
+| Option | Default | Description |
+| --- | --- | --- |
+| `services.tmignore.global.enable` | `true` | Whether the scheduled job should also process global dependency/cache directories. |
+| `services.tmignore.global.builtinRules` | `"defaults"` | Built-in global rule policy: `"defaults"` or `"none"`. |
+| `services.tmignore.global.disabledBuiltinRules` | `[]` | Built-in global rule IDs to disable. |
+| `services.tmignore.global.extraRules` | `{}` | Extra named global cache paths. Relative paths resolve against the user's home directory. |
 
-`services.tmignore.package`
-
-Type: package
-
-Default: `inputs.tmignore.packages.${pkgs.system}.tmignore`
-
-Package used for the scheduled `tmignore` binary.
-
-`services.tmignore.roots`
-
-Type: list of strings
-
-Default: `[]`
-
-Absolute filesystem roots to scan. This must be non-empty when the service is enabled. Relative paths and `~` are rejected by the module. These values are written to TOML as `roots`.
-
-`services.tmignore.skipPaths`
-
-Type: list of strings
-
-Default: `[]`
-
-Absolute paths to skip while scanning. Relative paths and `~` are rejected by the module. These values are written to TOML as `skip_paths`.
-
-`services.tmignore.mode`
-
-Type: one of `"dry-run"`, `"apply"`
-
-Default: `"dry-run"`
-
-Controls whether the launchd job only reports matches or applies Time Machine exclusions. The generated TOML does not contain this value; `"apply"` adds `--apply` to `ProgramArguments`.
-
-`services.tmignore.builtinRules`
-
-Type: one of `"defaults"`, `"none"`
-
-Default: `"defaults"`
-
-Controls whether built-in dependency/cache rules are enabled. This value is written to TOML as `builtin_rules`.
-
-`services.tmignore.disabledBuiltinRules`
-
-Type: list of strings
-
-Default: `[]`
-
-Built-in rule IDs to disable while keeping the rest of the default catalog enabled. These values are written to TOML as `disabled_builtin_rules`.
-
-`services.tmignore.extraRules`
-
-Type: attribute set of rules
-
-Default: `{}`
-
-Additional named rules. These values are written to TOML as `extra_rules`.
-
-`services.tmignore.schedule`
-
-Type: list of launchd calendar interval attribute sets
-
-Default: `[ { Hour = 3; Minute = 30; } ]`
-
-Schedules launchd runs through `StartCalendarInterval`. A single daily run is still represented as a one-item list.
-
-Each schedule entry supports these fields:
-
-`Minute`: integer from `0` to `59`.
-
-`Hour`: integer from `0` to `23`.
-
-`Day`: optional integer from `1` to `31`.
-
-`Weekday`: optional integer from `0` to `7`, using launchd numbering.
-
-`Month`: optional integer from `1` to `12`.
-
-`services.tmignore.runAtLoad`
-
-Type: boolean
-
-Default: `false`
-
-Sets launchd `RunAtLoad`. This can catch laptops that were asleep or off during a scheduled time.
-
-`services.tmignore.stdoutPath`
-
-Type: null or absolute path
-
-Default: `null`
-
-Optional launchd `StandardOutPath`.
-
-`services.tmignore.stderrPath`
-
-Type: null or absolute path
-
-Default: `null`
-
-Optional launchd `StandardErrorPath`.
-
-### Full Module Example
+Full example:
 
 ```nix
 { config, ... }:
@@ -143,90 +70,53 @@ in
 {
   services.tmignore = {
     enable = true;
-    roots = [ "${home}/Developer" ];
-    skipPaths = [ "${home}/Developer/archive" ];
     mode = "apply";
-    builtinRules = "defaults";
-    disabledBuiltinRules = [ "node.parcel-cache" ];
-    schedule = [
-      { Hour = 9; Minute = 0; }
-      { Hour = 17; Minute = 0; }
-    ];
-    runAtLoad = true;
+    scan.roots = [ "${home}/Developer" ];
+    scan.skipPaths = [ "${home}/Developer/archive" ];
+    scan.disabledBuiltinRules = [ "node.parcel-cache" ];
+    global.disabledBuiltinRules = [ "ollama.models" ];
+    global.extraRules.custom_cache.path = ".custom-cache";
     stdoutPath = "${home}/Library/Logs/tmignore.log";
     stderrPath = "${home}/Library/Logs/tmignore.error.log";
-
-    extraRules.pnpm_store = {
-      cases = [
-        {
-          targets = [
-            { path = ".pnpm-store"; kind = "directory"; }
-          ];
-          requirements = [
-            {
-              any_of = [
-                { path = "package.json"; kind = "file"; base = "candidate_parent"; }
-              ];
-            }
-          ];
-        }
-      ];
-    };
   };
 }
 ```
 
 ## TOML Config
 
-The TOML config is loaded with `tmignore --config <path>`. Unknown fields are rejected.
+The TOML config has separate `[scan]` and `[global]` sections. Unknown fields are rejected.
 
-There is no TOML setting for dry-run or apply mode. That is controlled by CLI flags: default dry-run behavior, or `--apply` to change Time Machine exclusions.
+```toml
+[scan]
+roots = ["/Users/alice/Developer"]
+skip_paths = ["/Users/alice/Developer/archive"]
+builtin_rules = "defaults"
+disabled_builtin_rules = ["node.parcel-cache"]
 
-### Top-Level Fields
+[[scan.extra_rules.pnpm_store.cases]]
 
-`roots`
+[[scan.extra_rules.pnpm_store.cases.targets]]
+path = ".pnpm-store"
+kind = "directory"
 
-Type: array of strings
+[[scan.extra_rules.pnpm_store.cases.requirements]]
 
-Default: `[]`
+[[scan.extra_rules.pnpm_store.cases.requirements.any_of]]
+path = "package.json"
+kind = "file"
+base = "candidate_parent"
 
-Filesystem roots to scan. At least one root is required after CLI overrides are applied.
+[global]
+builtin_rules = "defaults"
+disabled_builtin_rules = ["ollama.models"]
 
-`skip_paths`
+[global.extra_rules.custom_cache]
+path = ".custom-cache"
+```
 
-Type: array of strings
+Relative `scan.roots` and `scan.skip_paths` are resolved against the process current directory by the CLI. The nix-darwin module rejects relative scan paths. Relative global paths resolve against the user's home directory; `~` is not expanded.
 
-Default: `[]`
-
-Paths to skip while scanning.
-
-`builtin_rules`
-
-Type: `"defaults"` or `"none"`
-
-Default: `"defaults"`
-
-Controls whether built-in rules are enabled.
-
-`disabled_builtin_rules`
-
-Type: array of strings
-
-Default: `[]`
-
-Built-in rule IDs to disable. Unknown IDs are rejected. Built-in rule IDs remain reserved and cannot be reused by `extra_rules`.
-
-`extra_rules`
-
-Type: table of named rules
-
-Default: `{}`
-
-Additional dependency/cache rules.
-
-### Built-In Rules
-
-The `defaults` catalog contains these built-in rules:
+## Built-In Scan Rules
 
 | Rule ID | Target | Evidence |
 | --- | --- | --- |
@@ -242,8 +132,8 @@ The `defaults` catalog contains these built-in rules:
 | `swift.build` | `.build` | `Package.swift` |
 | `elixir.deps` | `deps` | `mix.exs` |
 | `elixir.build` | `_build` | `mix.exs` |
-| `gradle.cache` | `.gradle` | `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts` |
-| `gradle.build` | `build` | `build.gradle`, `build.gradle.kts` |
+| `gradle.cache` | `.gradle` | Gradle build/settings files |
+| `gradle.build` | `build` | Gradle build files |
 | `dart.tool` | `.dart_tool` | `pubspec.yaml` |
 | `dart.build` | `build` | `pubspec.yaml` |
 | `haskell.stack-work` | `.stack-work` | `stack.yaml` |
@@ -255,104 +145,34 @@ The `defaults` catalog contains these built-in rules:
 | `java.maven-target` | `target` | `pom.xml` |
 | `scala.sbt-target` | `target` | `build.sbt`, `project/plugins.sbt` |
 
-The catalog deliberately targets per-project dependency/cache directories only. Home-directory or global caches, such as `~/.terraform.d`, are out of scope for the built-in rules and are not yet handled.
+## Built-In Global Rules
 
-### Path Handling
+| Rule ID | Home-relative path |
+| --- | --- |
+| `cargo.registry` | `.cargo/registry` |
+| `cargo.git` | `.cargo/git` |
+| `rustup.toolchains` | `.rustup/toolchains` |
+| `go.module-cache` | `go/pkg/mod` |
+| `gradle.caches` | `.gradle/caches` |
+| `maven.repository` | `.m2/repository` |
+| `npm.cache` | `.npm/_cacache` |
+| `pnpm.store` | `Library/pnpm/store` |
+| `bun.install-cache` | `.bun/install/cache` |
+| `composer.cache` | `.composer/cache` |
+| `ivy.cache` | `.ivy2/cache` |
+| `cocoapods.repos` | `.cocoapods/repos` |
+| `vagrant.boxes` | `.vagrant.d/boxes` |
+| `terraform.plugin-cache` | `.terraform.d/plugin-cache` |
+| `xcode.derived-data` | `Library/Developer/Xcode/DerivedData` |
+| `xdg.cache` | `.cache` |
+| `ollama.models` | `.ollama/models` |
 
-Absolute paths are used as-is.
-
-Relative `roots` and `skip_paths` are resolved against the process current directory.
-
-`~` is not expanded.
-
-After path preparation, duplicate paths are removed and nested roots or skip paths are pruned.
-
-CLI `--root` values replace TOML `roots`. CLI `--skip` values are appended to TOML `skip_paths`.
-
-### Rule Semantics
-
-A rule matches when any of its cases matches.
-
-A case matches when the candidate path matches any target and every requirement is satisfied.
-
-A requirement is satisfied when any one of its `any_of` evidence entries exists.
-
-Multiple requirements are logical AND. Multiple evidence entries inside one requirement are logical OR.
-
-When a dependency/cache directory is matched, the scanner records it and prunes traversal below that directory.
-
-### Rule Schema
-
-`extra_rules.<id>`
-
-Rule IDs must be non-empty and contain only ASCII letters, numbers, `.`, `_`, or `-`. Extra rule IDs must not collide with enabled built-in rule IDs.
-
-`cases`
-
-Type: array of case tables
-
-Required. Must contain at least one case.
-
-`targets`
-
-Type: array of target tables
-
-Required on each case. Must contain at least one target.
-
-Target fields:
-
-`path`: relative path string. It must not be empty, absolute, or contain `..`.
-
-`kind`: currently only `"directory"`.
-
-`requirements`
-
-Type: array of requirement tables
-
-Required on each case. Must contain at least one requirement.
-
-Requirement fields:
-
-`any_of`: array of evidence tables. Must contain at least one evidence entry.
-
-Evidence fields:
-
-`path`: relative path string. It must not be empty, absolute, or contain `..`.
-
-`kind`: one of `"file"`, `"directory"`, or `"any"`.
-
-`base`: one of `"candidate"`, `"candidate_parent"`, or `"target_parent"`.
-
-`candidate` resolves the evidence path inside the candidate target directory. `candidate_parent` resolves it next to the candidate target directory. `target_parent` resolves it next to the configured target path, which is useful for nested targets such as `vendor/bundle` with a project-level `Gemfile`.
-
-### TOML Example
-
-```toml
-roots = ["/Users/alice/Developer"]
-skip_paths = ["/Users/alice/Developer/archive"]
-builtin_rules = "defaults"
-disabled_builtin_rules = ["node.parcel-cache"]
-
-[[extra_rules.pnpm_store.cases]]
-
-[[extra_rules.pnpm_store.cases.targets]]
-path = ".pnpm-store"
-kind = "directory"
-
-[[extra_rules.pnpm_store.cases.requirements]]
-
-[[extra_rules.pnpm_store.cases.requirements.any_of]]
-path = "package.json"
-kind = "file"
-base = "candidate_parent"
-```
-
-Equivalent TOML using inline arrays is also valid for the same schema.
+Global rules deliberately target precise cache directories. Whole home-directory config roots such as `~/.terraform.d`, `.vagrant.d`, or `.sbt` are not excluded because they may contain credentials or user-authored configuration. `~/Library/Caches` is not listed because macOS already excludes it from Time Machine by default.
 
 ## Exit Codes
 
 | Code | Meaning |
 | --- | --- |
-| `0` | The run completed without failures. |
-| `1` | The run completed, but one or more per-path operations failed, such as an unreadable directory or a `tmutil` error. The report lists each failure. |
-| `2` | A global precondition failed and no run was performed, such as invalid configuration or missing scan roots. |
+| `0` | The command completed without failures. |
+| `1` | The command completed, but one or more per-path operations failed, such as an unreadable directory or a `tmutil` error. |
+| `2` | A global precondition failed and no run was performed, such as invalid configuration, missing scan roots, missing home directory, or invalid CLI usage. |

@@ -3,6 +3,16 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 
 #[test]
+fn bare_command_exits_with_usage_error() {
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Usage:"));
+}
+
+#[test]
 fn dry_run_reports_matched_dependency_directory() {
     let fixture = Fixture::new();
     fixture.dir("project/node_modules");
@@ -11,7 +21,7 @@ fn dry_run_reports_matched_dependency_directory() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--root", fixture.root()])
+        .args(["scan", "--root", fixture.root()])
         .assert()
         .success()
         .stdout(
@@ -26,6 +36,70 @@ fn dry_run_reports_matched_dependency_directory() {
 }
 
 #[test]
+fn global_reports_matched_global_cache_directory() {
+    let fixture = Fixture::new();
+    fixture.dir(".custom-cache");
+    let config = fixture.config_file(
+        r#"
+[global]
+builtin_rules = "none"
+
+[global.extra_rules.custom_cache]
+path = ".custom-cache"
+"#,
+    );
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .env("HOME", fixture.root())
+        .args(["global", "--config", config.as_str()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Global cache roots:")
+                .and(predicate::str::contains("Matched global caches:"))
+                .and(predicate::str::contains(".custom-cache"))
+                .and(predicate::str::contains("    matched: custom_cache")),
+        );
+}
+
+#[test]
+fn all_reports_scan_and_global_sections() {
+    let fixture = Fixture::new();
+    fixture.dir("project/node_modules");
+    fixture.file("project/package.json");
+    fixture.dir(".custom-cache");
+    let config = fixture.config_file(&format!(
+        r#"
+[scan]
+roots = ["{}"]
+
+[global]
+builtin_rules = "none"
+
+[global.extra_rules.custom_cache]
+path = ".custom-cache"
+"#,
+        fixture.path_string("project")
+    ));
+
+    let mut command = Command::cargo_bin("tmignore").unwrap();
+
+    command
+        .env("HOME", fixture.root())
+        .args(["all", "--config", config.as_str()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Scan:")
+                .and(predicate::str::contains("Global:"))
+                .and(predicate::str::contains("    matched: node.node-modules"))
+                .and(predicate::str::contains("    matched: custom_cache")),
+        );
+}
+
+#[test]
 fn dry_run_reports_prepared_roots() {
     let fixture = Fixture::new();
     fixture.dir("project/node_modules");
@@ -35,7 +109,7 @@ fn dry_run_reports_prepared_roots() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--root", root.as_str()])
+        .args(["scan", "--root", root.as_str()])
         .assert()
         .success()
         .stdout(predicate::str::contains(format!(
@@ -50,14 +124,14 @@ fn dry_run_uses_config_file_roots() {
     fixture.dir("project/node_modules");
     fixture.file("project/package.json");
     let config = fixture.config_file(&format!(
-        "roots = [\"{}\"]\n",
+        "[scan]\nroots = [\"{}\"]\n",
         fixture.path_string("project")
     ));
 
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--config", config.as_str()])
+        .args(["scan", "--config", config.as_str()])
         .assert()
         .success()
         .stdout(
@@ -75,7 +149,7 @@ fn cli_roots_replace_config_file_roots() {
     fixture.dir("cli-project/target");
     fixture.file("cli-project/Cargo.toml");
     let config = fixture.config_file(&format!(
-        "roots = [\"{}\"]\n",
+        "[scan]\nroots = [\"{}\"]\n",
         fixture.path_string("config-project")
     ));
     let cli_root = fixture.path_string("cli-project");
@@ -83,7 +157,13 @@ fn cli_roots_replace_config_file_roots() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--config", config.as_str(), "--root", cli_root.as_str()])
+        .args([
+            "scan",
+            "--config",
+            config.as_str(),
+            "--root",
+            cli_root.as_str(),
+        ])
         .assert()
         .success()
         .stdout(
@@ -100,11 +180,12 @@ fn dry_run_uses_named_extra_rules() {
     fixture.file("project/custom.toml");
     let config = fixture.config_file(&format!(
         r#"
+[scan]
 roots = ["{}"]
 builtin_rules = "none"
 
-[extra_rules.custom_cache]
-[[extra_rules.custom_cache.cases]]
+[scan.extra_rules.custom_cache]
+[[scan.extra_rules.custom_cache.cases]]
 targets = [{{ path = ".custom-cache", kind = "directory" }}]
 requirements = [
   {{ any_of = [{{ path = "custom.toml", kind = "file", base = "candidate_parent" }}] }},
@@ -116,7 +197,7 @@ requirements = [
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--config", config.as_str()])
+        .args(["scan", "--config", config.as_str()])
         .assert()
         .success()
         .stdout(
@@ -138,7 +219,7 @@ fn dry_run_groups_skipped_paths_by_default() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--root", fixture.root()])
+        .args(["scan", "--root", fixture.root()])
         .assert()
         .success()
         .stdout(
@@ -168,7 +249,7 @@ fn dry_run_does_not_group_skipped_paths_by_broad_root_child() {
     let root = fixture.path_string("Developer");
 
     command
-        .args(["--root", root.as_str(), "--dry-run"])
+        .args(["scan", "--root", root.as_str(), "--dry-run"])
         .assert()
         .success()
         .stdout(
@@ -193,7 +274,7 @@ fn dry_run_verbose_lists_every_skipped_path() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
-        .args(["--root", fixture.root(), "--dry-run", "-v"])
+        .args(["scan", "--root", fixture.root(), "--dry-run", "-v"])
         .assert()
         .success()
         .stdout(
@@ -209,6 +290,7 @@ fn missing_roots_exit_with_global_failure_code() {
     let mut command = Command::cargo_bin("tmignore").unwrap();
 
     command
+        .args(["scan"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("at least one scan root"));
@@ -229,7 +311,7 @@ fn per_path_failures_exit_with_partial_failure_code() {
     fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o000)).unwrap();
 
     let mut command = Command::cargo_bin("tmignore").unwrap();
-    let assert = command.args(["--root", fixture.root()]).assert();
+    let assert = command.args(["scan", "--root", fixture.root()]).assert();
 
     fs_err::set_permissions(&blocked_path, Permissions::from_mode(0o700)).unwrap();
 

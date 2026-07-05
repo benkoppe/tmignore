@@ -1,4 +1,4 @@
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::backend::{BackendDiagnostic, ExclusionChange, ExclusionStatus, TimeMachineBackend};
 use crate::rule::Target;
@@ -50,22 +50,7 @@ impl RunReport {
             .matches
             .iter()
             .map(|dependency_match| {
-                let outcome = match backend.exclusion_status(&dependency_match.path) {
-                    ExclusionStatus::Excluded => ExclusionOutcome::AlreadyExcluded,
-                    ExclusionStatus::Included => {
-                        match backend.add_exclusion(&dependency_match.path) {
-                            Ok(ExclusionChange::AlreadyExcluded) => {
-                                ExclusionOutcome::AlreadyExcluded
-                            }
-                            Ok(ExclusionChange::NewlyExcluded) => ExclusionOutcome::NewlyExcluded,
-                            Ok(ExclusionChange::DryRun) => ExclusionOutcome::DryRun,
-                            Err(diagnostic) => ExclusionOutcome::AddFailed(diagnostic),
-                        }
-                    }
-                    ExclusionStatus::Unknown(diagnostic) => {
-                        ExclusionOutcome::StatusFailed(diagnostic)
-                    }
-                };
+                let outcome = apply_exclusion(&dependency_match.path, backend);
 
                 ExclusionAction {
                     path: dependency_match.path.clone(),
@@ -88,6 +73,19 @@ impl RunReport {
                     ExclusionOutcome::StatusFailed(_) | ExclusionOutcome::AddFailed(_)
                 )
             })
+    }
+}
+
+pub fn apply_exclusion(path: &Utf8Path, backend: &impl TimeMachineBackend) -> ExclusionOutcome {
+    match backend.exclusion_status(path) {
+        ExclusionStatus::Excluded => ExclusionOutcome::AlreadyExcluded,
+        ExclusionStatus::Included => match backend.add_exclusion(path) {
+            Ok(ExclusionChange::AlreadyExcluded) => ExclusionOutcome::AlreadyExcluded,
+            Ok(ExclusionChange::NewlyExcluded) => ExclusionOutcome::NewlyExcluded,
+            Ok(ExclusionChange::DryRun) => ExclusionOutcome::DryRun,
+            Err(diagnostic) => ExclusionOutcome::AddFailed(diagnostic),
+        },
+        ExclusionStatus::Unknown(diagnostic) => ExclusionOutcome::StatusFailed(diagnostic),
     }
 }
 

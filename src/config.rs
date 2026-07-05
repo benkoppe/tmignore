@@ -10,6 +10,7 @@ use figment::providers::{Format, Toml};
 use path_clean::PathClean;
 use serde::Deserialize;
 
+use crate::global::{GlobalRule, default_global_rules};
 use crate::rule::{Evidence, Requirement, Rule, RuleCase, default_rules};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,9 +27,29 @@ pub struct Config {
     pub rules: Vec<Rule>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AppConfig {
+    pub scan: Config,
+    pub global: GlobalConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalConfig {
+    pub rules: Vec<GlobalRule>,
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    #[serde(default)]
+    scan: FileScanConfig,
+    #[serde(default)]
+    global: FileGlobalConfig,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileScanConfig {
     #[serde(default)]
     roots: Vec<Utf8PathBuf>,
     #[serde(default)]
@@ -39,6 +60,17 @@ struct FileConfig {
     disabled_builtin_rules: Vec<String>,
     #[serde(default)]
     extra_rules: BTreeMap<String, FileRule>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileGlobalConfig {
+    #[serde(default)]
+    builtin_rules: BuiltinRuleMode,
+    #[serde(default)]
+    disabled_builtin_rules: Vec<String>,
+    #[serde(default)]
+    extra_rules: BTreeMap<String, FileGlobalRule>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -55,12 +87,24 @@ struct FileRule {
     cases: Vec<RuleCase>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileGlobalRule {
+    path: Utf8PathBuf,
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedConfig {
     pub roots: Vec<Utf8PathBuf>,
     pub skip_paths: Vec<Utf8PathBuf>,
     pub mode: RunMode,
     pub rules: Vec<Rule>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedGlobalConfig {
+    pub home: Utf8PathBuf,
+    pub rules: Vec<GlobalRule>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -79,6 +123,26 @@ pub enum ConfigError {
     },
     #[error("invalid rule `{rule_id}`: {message}")]
     InvalidRule { rule_id: String, message: String },
+    #[error("invalid global rule `{rule_id}`: {message}")]
+    InvalidGlobalRule { rule_id: String, message: String },
+    #[error("failed to determine home directory")]
+    MissingHomeDir,
+    #[error("home directory is not valid UTF-8: {0}")]
+    NonUtf8HomeDir(PathBuf),
+}
+
+impl AppConfig {
+    pub fn load(config_path: Option<&Utf8Path>, mode: RunMode) -> Result<Self, ConfigError> {
+        let file_config = match config_path {
+            Some(path) => load_file_config(path)?,
+            None => FileConfig::default(),
+        };
+
+        Ok(Self {
+            scan: Config::from_file(file_config.scan, Vec::new(), Vec::new(), mode)?,
+            global: GlobalConfig::from_file(file_config.global)?,
+        })
+    }
 }
 
 impl Config {
@@ -102,6 +166,28 @@ impl Config {
             None => FileConfig::default(),
         };
 
+        Self::from_file(file_config.scan, cli_roots, cli_skip_paths, mode)
+    }
+
+    pub fn with_cli_paths(
+        mut self,
+        cli_roots: Vec<Utf8PathBuf>,
+        cli_skip_paths: Vec<Utf8PathBuf>,
+    ) -> Self {
+        if !cli_roots.is_empty() {
+            self.roots = cli_roots;
+        }
+
+        self.skip_paths.extend(cli_skip_paths);
+        self
+    }
+
+    fn from_file(
+        file_config: FileScanConfig,
+        cli_roots: Vec<Utf8PathBuf>,
+        cli_skip_paths: Vec<Utf8PathBuf>,
+        mode: RunMode,
+    ) -> Result<Self, ConfigError> {
         let roots = if cli_roots.is_empty() {
             file_config.roots
         } else {
@@ -143,6 +229,32 @@ impl Config {
             roots,
             skip_paths: prepare_paths(&self.skip_paths, cwd),
             mode: self.mode,
+            rules: self.rules.clone(),
+        })
+    }
+}
+
+impl GlobalConfig {
+    fn from_file(file_config: FileGlobalConfig) -> Result<Self, ConfigError> {
+        Ok(Self {
+            rules: build_global_rules(
+                file_config.builtin_rules,
+                file_config.disabled_builtin_rules,
+                file_config.extra_rules,
+            )?,
+        })
+    }
+
+    pub fn prepare(&self) -> Result<PreparedGlobalConfig, ConfigError> {
+        let home = env::home_dir().ok_or(ConfigError::MissingHomeDir)?;
+        let home = Utf8PathBuf::from_path_buf(home).map_err(ConfigError::NonUtf8HomeDir)?;
+
+        self.prepare_with_home(&home)
+    }
+
+    pub fn prepare_with_home(&self, home: &Utf8Path) -> Result<PreparedGlobalConfig, ConfigError> {
+        Ok(PreparedGlobalConfig {
+            home: clean_absolute_path(home, Utf8Path::new("/")),
             rules: self.rules.clone(),
         })
     }
@@ -213,6 +325,95 @@ fn build_rules(
     }
 
     Ok(rules)
+}
+
+fn build_global_rules(
+    builtin_rules: BuiltinRuleMode,
+    disabled_builtin_rules: Vec<String>,
+    extra_rules: BTreeMap<String, FileGlobalRule>,
+) -> Result<Vec<GlobalRule>, ConfigError> {
+    let builtin_catalog = default_global_rules();
+    let builtin_rule_ids = builtin_catalog
+        .iter()
+        .map(|rule| rule.id.clone())
+        .collect::<HashSet<_>>();
+    let disabled_builtin_rule_ids = disabled_builtin_rules.into_iter().collect::<HashSet<_>>();
+
+    for rule_id in &disabled_builtin_rule_ids {
+        if !builtin_rule_ids.contains(rule_id) {
+            return Err(ConfigError::InvalidGlobalRule {
+                rule_id: rule_id.clone(),
+                message: "disabled built-in global rule id does not exist".to_string(),
+            });
+        }
+    }
+
+    let mut rules = match builtin_rules {
+        BuiltinRuleMode::Defaults => builtin_catalog
+            .into_iter()
+            .filter(|rule| !disabled_builtin_rule_ids.contains(&rule.id))
+            .collect(),
+        BuiltinRuleMode::None => Vec::new(),
+    };
+    let mut rule_ids = rules
+        .iter()
+        .map(|rule| rule.id.clone())
+        .collect::<HashSet<_>>();
+
+    for (rule_id, file_rule) in extra_rules {
+        if builtin_rule_ids.contains(&rule_id) {
+            return Err(ConfigError::InvalidGlobalRule {
+                rule_id,
+                message: "global rule id collides with a built-in global rule".to_string(),
+            });
+        }
+
+        validate_global_rule(&rule_id, &file_rule.path)?;
+
+        if !rule_ids.insert(rule_id.clone()) {
+            return Err(ConfigError::InvalidGlobalRule {
+                rule_id,
+                message: "global rule id collides with another enabled global rule".to_string(),
+            });
+        }
+
+        rules.push(GlobalRule::home_relative(rule_id, file_rule.path));
+    }
+
+    Ok(rules)
+}
+
+fn validate_global_rule(rule_id: &str, path: &Utf8Path) -> Result<(), ConfigError> {
+    if !is_valid_rule_id(rule_id) {
+        return invalid_global_rule(
+            rule_id,
+            "global rule id must contain only ASCII letters, numbers, `.`, `_`, or `-`",
+        );
+    }
+
+    validate_global_rule_path(rule_id, path)
+}
+
+fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), ConfigError> {
+    if path.as_str().is_empty() {
+        return invalid_global_rule(rule_id, "global rule path must not be empty");
+    }
+
+    if path.as_str().starts_with('~') {
+        return invalid_global_rule(
+            rule_id,
+            "global rule path must be absolute or relative to the home directory; `~` is not expanded",
+        );
+    }
+
+    if path
+        .components()
+        .any(|component| component.as_str() == "..")
+    {
+        return invalid_global_rule(rule_id, "global rule path must not contain `..`");
+    }
+
+    Ok(())
 }
 
 fn validate_rule(rule: &Rule) -> Result<(), ConfigError> {
@@ -308,6 +509,13 @@ fn invalid_rule<T>(rule: &Rule, message: impl Into<String>) -> Result<T, ConfigE
     })
 }
 
+fn invalid_global_rule<T>(rule_id: &str, message: impl Into<String>) -> Result<T, ConfigError> {
+    Err(ConfigError::InvalidGlobalRule {
+        rule_id: rule_id.to_string(),
+        message: message.into(),
+    })
+}
+
 fn prepare_paths(paths: &[Utf8PathBuf], cwd: &Utf8Path) -> Vec<Utf8PathBuf> {
     let mut paths = paths
         .iter()
@@ -369,8 +577,8 @@ mod tests {
     }
 
     const CUSTOM_RULE_CONFIG: &str = r#"
-[extra_rules.custom_cache]
-[[extra_rules.custom_cache.cases]]
+[scan.extra_rules.custom_cache]
+[[scan.extra_rules.custom_cache.cases]]
 targets = [{ path = ".custom-cache", kind = "directory" }]
 requirements = [
   { any_of = [{ path = "custom.toml", kind = "file", base = "candidate_parent" }] },
@@ -382,6 +590,7 @@ requirements = [
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
+[scan]
 roots = ["projects"]
 skip_paths = ["projects/archive"]
 "#,
@@ -403,6 +612,7 @@ skip_paths = ["projects/archive"]
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
+[scan]
 roots = ["config-root"]
 skip_paths = ["config-skip"]
 "#,
@@ -429,8 +639,9 @@ skip_paths = ["config-skip"]
     #[test]
     fn builtin_rules_none_uses_only_extra_rules() {
         let fixture = Fixture::new();
-        let config_path =
-            fixture.config_file(&format!("builtin_rules = \"none\"\n{CUSTOM_RULE_CONFIG}"));
+        let config_path = fixture.config_file(&format!(
+            "[scan]\nbuiltin_rules = \"none\"\n{CUSTOM_RULE_CONFIG}"
+        ));
 
         let config =
             Config::load(Some(&config_path), Vec::new(), Vec::new(), RunMode::DryRun).unwrap();
@@ -444,6 +655,7 @@ skip_paths = ["config-skip"]
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
+[scan]
 disabled_builtin_rules = ["node.node-modules"]
 "#,
         );
@@ -465,6 +677,7 @@ disabled_builtin_rules = ["node.node-modules"]
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
+[scan]
 disabled_builtin_rules = ["missing.rule"]
 "#,
         );
@@ -484,8 +697,8 @@ disabled_builtin_rules = ["missing.rule"]
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
-[extra_rules."node.node-modules"]
-[[extra_rules."node.node-modules".cases]]
+[scan.extra_rules."node.node-modules"]
+[[scan.extra_rules."node.node-modules".cases]]
 targets = [{ path = ".custom-cache", kind = "directory" }]
 requirements = [
   { any_of = [{ path = "custom.toml", kind = "file", base = "candidate_parent" }] },
@@ -507,10 +720,11 @@ requirements = [
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
+[scan]
 builtin_rules = "none"
 
-[extra_rules.bad_rule]
-[[extra_rules.bad_rule.cases]]
+[scan.extra_rules.bad_rule]
+[[scan.extra_rules.bad_rule.cases]]
 targets = [{ path = "../cache", kind = "directory" }]
 requirements = [
   { any_of = [{ path = "custom.toml", kind = "file", base = "candidate_parent" }] },

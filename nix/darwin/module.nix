@@ -7,6 +7,8 @@
 }:
 let
   cfg = config.services.tmignore;
+  scanCfg = cfg.scan;
+  globalCfg = cfg.global;
   toml = pkgs.formats.toml { };
 
   calendarIntervalType = lib.types.submodule {
@@ -112,15 +114,23 @@ let
   };
 
   tmignoreConfig = toml.generate "tmignore.toml" {
-    roots = cfg.roots;
-    skip_paths = cfg.skipPaths;
-    builtin_rules = cfg.builtinRules;
-    disabled_builtin_rules = cfg.disabledBuiltinRules;
-    extra_rules = cfg.extraRules;
+    scan = {
+      roots = scanCfg.roots;
+      skip_paths = scanCfg.skipPaths;
+      builtin_rules = scanCfg.builtinRules;
+      disabled_builtin_rules = scanCfg.disabledBuiltinRules;
+      extra_rules = scanCfg.extraRules;
+    };
+    global = {
+      builtin_rules = globalCfg.builtinRules;
+      disabled_builtin_rules = globalCfg.disabledBuiltinRules;
+      extra_rules = globalCfg.extraRules;
+    };
   };
 
   programArguments = [
     (lib.getExe cfg.package)
+    (if globalCfg.enable then "all" else "scan")
     "--config"
     "${tmignoreConfig}"
   ] ++ lib.optional (cfg.mode == "apply") "--apply";
@@ -138,20 +148,6 @@ in
       description = "tmignore package to run from launchd.";
     };
 
-    roots = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      example = [ "/Users/alice/Developer" ];
-      description = "Absolute filesystem roots to scan. These must be set explicitly.";
-    };
-
-    skipPaths = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      example = [ "/Users/alice/Developer/archive" ];
-      description = "Absolute paths to skip while scanning.";
-    };
-
     mode = lib.mkOption {
       type = lib.types.enum [
         "dry-run"
@@ -161,44 +157,100 @@ in
       description = "Whether scheduled runs only report matches or apply Time Machine exclusions.";
     };
 
-    builtinRules = lib.mkOption {
-      type = lib.types.enum [
-        "defaults"
-        "none"
-      ];
-      default = "defaults";
-      description = "Builtin rule set policy written to tmignore's generated TOML config.";
+    scan = {
+      roots = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/Users/alice/Developer" ];
+        description = "Absolute filesystem roots to scan. These must be set explicitly.";
+      };
+
+      skipPaths = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "/Users/alice/Developer/archive" ];
+        description = "Absolute paths to skip while scanning.";
+      };
+
+      builtinRules = lib.mkOption {
+        type = lib.types.enum [
+          "defaults"
+          "none"
+        ];
+        default = "defaults";
+        description = "Builtin project scan rule set policy written to tmignore's generated TOML config.";
+      };
+
+      disabledBuiltinRules = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "node.parcel-cache" ];
+        description = "Built-in scan rule IDs to disable while keeping the rest of the default catalog enabled.";
+      };
+
+      extraRules = lib.mkOption {
+        type = lib.types.attrsOf ruleType;
+        default = { };
+        example = lib.literalExpression ''
+          {
+            pnpm_store = {
+              cases = [
+                {
+                  targets = [ { path = ".pnpm-store"; kind = "directory"; } ];
+                  requirements = [
+                    {
+                      any_of = [
+                        { path = "package.json"; kind = "file"; base = "candidate_parent"; }
+                      ];
+                    }
+                  ];
+                }
+              ];
+            };
+          }
+        '';
+        description = "Named extra project dependency/cache rules written under scan.extra_rules in tmignore's TOML config.";
+      };
     };
 
-    disabledBuiltinRules = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      example = [ "node.parcel-cache" ];
-      description = "Built-in rule IDs to disable while keeping the rest of the default catalog enabled.";
-    };
+    global = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether the scheduled launchd job should also process global dependency/cache directories.";
+      };
 
-    extraRules = lib.mkOption {
-      type = lib.types.attrsOf ruleType;
-      default = { };
-      example = lib.literalExpression ''
-        {
-          pnpm_store = {
-            cases = [
-              {
-                targets = [ { path = ".pnpm-store"; kind = "directory"; } ];
-                requirements = [
-                  {
-                    any_of = [
-                      { path = "package.json"; kind = "file"; base = "candidate_parent"; }
-                    ];
-                  }
-                ];
-              }
-            ];
+      builtinRules = lib.mkOption {
+        type = lib.types.enum [
+          "defaults"
+          "none"
+        ];
+        default = "defaults";
+        description = "Builtin global cache rule set policy written to tmignore's generated TOML config.";
+      };
+
+      disabledBuiltinRules = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "ollama.models" ];
+        description = "Built-in global rule IDs to disable while keeping the rest of the default catalog enabled.";
+      };
+
+      extraRules = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.submodule {
+          options.path = lib.mkOption {
+            type = lib.types.str;
+            description = "Absolute path or home-relative global cache directory path.";
           };
-        }
-      '';
-      description = "Named extra dependency/cache rules written under extra_rules in tmignore's TOML config.";
+        });
+        default = { };
+        example = lib.literalExpression ''
+          {
+            custom_cache.path = ".custom-cache";
+          }
+        '';
+        description = "Named extra global cache rules written under global.extra_rules in tmignore's TOML config.";
+      };
     };
 
     schedule = lib.mkOption {
@@ -242,16 +294,16 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.roots != [ ];
-        message = "services.tmignore.roots must contain at least one explicit scan root.";
+        assertion = scanCfg.roots != [ ];
+        message = "services.tmignore.scan.roots must contain at least one explicit scan root.";
       }
       {
-        assertion = lib.all isAbsolutePath cfg.roots;
-        message = "services.tmignore.roots must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
+        assertion = lib.all isAbsolutePath scanCfg.roots;
+        message = "services.tmignore.scan.roots must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
       }
       {
-        assertion = lib.all isAbsolutePath cfg.skipPaths;
-        message = "services.tmignore.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
+        assertion = lib.all isAbsolutePath scanCfg.skipPaths;
+        message = "services.tmignore.scan.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
       }
     ];
 

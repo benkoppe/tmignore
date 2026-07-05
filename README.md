@@ -23,7 +23,7 @@ Import the module from the flake and enable the service:
         {
           services.tmignore = {
             enable = true;
-            roots = [ "${home}/Developer" ];
+            scan.roots = [ "${home}/Developer" ];
           };
         })
       ];
@@ -57,6 +57,12 @@ To apply Time Machine exclusions, opt in explicitly:
 services.tmignore.mode = "apply";
 ```
 
+The launchd job runs `tmignore all` by default, which combines project scanning with global dependency/cache directory exclusions. To run only the project scanner from nix-darwin:
+
+```nix
+services.tmignore.global.enable = false;
+```
+
 For laptops, `runAtLoad` can catch cases where the machine was asleep or off during a scheduled time:
 
 ```nix
@@ -65,10 +71,10 @@ services.tmignore.runAtLoad = true;
 
 ## Extra Rules
 
-Named extra rules are generated as `extra_rules.<name>` in the TOML config:
+Named extra scan rules are generated as `scan.extra_rules.<name>` in the TOML config:
 
 ```nix
-services.tmignore.extraRules.pnpm_store = {
+services.tmignore.scan.extraRules.pnpm_store = {
   cases = [
     {
       targets = [
@@ -84,4 +90,18 @@ services.tmignore.extraRules.pnpm_store = {
     }
   ];
 };
+```
+
+Extra global cache rules are simpler fixed paths, resolved relative to the user's home directory unless absolute:
+
+```nix
+services.tmignore.global.extraRules.custom_cache.path = ".custom-cache";
+```
+
+Manual CLI usage is split into explicit commands:
+
+```sh
+tmignore scan --root ~/Developer
+tmignore global
+tmignore all --root ~/Developer
 ```

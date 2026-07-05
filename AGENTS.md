@@ -151,7 +151,7 @@ Examples of desired default rule behavior include:
 - `.terragrunt-cache` with `terragrunt.hcl`.
 - `cdk.out` with `cdk.json`.
 
-Home-directory or global caches, such as `~/.terraform.d`, are deliberately out of scope for the built-in per-project rules. Handling global caches is a separate problem that has not been dealt with yet; do not add such rules to the default catalog without explicit user approval.
+Home-directory or global caches are deliberately out of scope for the built-in per-project scan rules. They belong to the separate `tmignore global` command, which should use precise fixed cache paths rather than scanning the whole home directory or excluding broad configuration directories. For example, `~/.terraform.d/plugin-cache` is a valid kind of global cache target, while `~/.terraform.d` is not because it can contain credentials and user-authored configuration.
 
 The exact rule set should be chosen deliberately during implementation. Do not blindly copy every upstream rule if it is too broad or likely to create false positives. The pre-alpha state permits better defaults and richer rule semantics even if they differ from `asimov`.
 
@@ -162,9 +162,10 @@ The CLI should be safe for unattended scheduled use and understandable when run 
 Expected capabilities include:
 
 - A dry-run mode that shows what would be excluded without modifying Time Machine state.
+- Explicit `scan`, `global`, and `all` subcommands.
 - A way to specify scan roots.
 - A way to specify or load configuration.
-- Clear reporting of matched, excluded, already-excluded, skipped, and failed paths.
+- Clear reporting of matched, absent, excluded, already-excluded, skipped, and failed paths.
 - A summary suitable for launchd logs.
 - Non-zero exit behavior that distinguishes global failure from partial per-path failures, if practical.
 
