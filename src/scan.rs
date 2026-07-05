@@ -287,6 +287,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::config::RunMode;
     use crate::rule::{EvidenceBase, Requirement};
 
     const STRICT_RULES: &[Rule] = &[Rule {
@@ -437,7 +438,7 @@ mod tests {
         let config = Config {
             roots: vec![fixture.path("linked")],
             skip_paths: Vec::new(),
-            dry_run: true,
+            mode: RunMode::DryRun,
             rules: crate::rule::DEFAULT_RULES,
         };
         let report = scan(&config).unwrap();
@@ -526,7 +527,7 @@ mod tests {
         let config = Config {
             roots: vec![fixture.root()],
             skip_paths: skip_paths.to_vec(),
-            dry_run: true,
+            mode: RunMode::DryRun,
             rules,
         };
 

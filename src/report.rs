@@ -3,14 +3,17 @@ use std::fmt::{self, Write};
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::config::RunMode;
+use crate::run::{ExclusionAction, ExclusionOutcome, RunReport};
 use crate::scan::SkippedPath;
-use crate::scan::{ScanFailure, ScanReport, SkipReason};
+use crate::scan::{ScanFailure, SkipReason};
 
 const SYMLINK_GROUP_COMPONENTS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportMode {
     DryRun,
+    Apply,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +36,19 @@ impl ReportOptions {
             verbosity,
         }
     }
+
+    pub const fn new(mode: ReportMode, verbosity: ReportVerbosity) -> Self {
+        Self { mode, verbosity }
+    }
+}
+
+impl From<RunMode> for ReportMode {
+    fn from(mode: RunMode) -> Self {
+        match mode {
+            RunMode::DryRun => Self::DryRun,
+            RunMode::Apply => Self::Apply,
+        }
+    }
 }
 
 impl From<u8> for ReportVerbosity {
@@ -46,7 +62,7 @@ impl From<u8> for ReportVerbosity {
 }
 
 pub fn render_human_report(
-    report: &ScanReport,
+    report: &RunReport,
     options: ReportOptions,
 ) -> Result<String, fmt::Error> {
     let mut output = String::new();
@@ -64,17 +80,18 @@ pub fn render_human_report(
 fn render_mode_notice(output: &mut String, mode: ReportMode) -> Result<(), fmt::Error> {
     match mode {
         ReportMode::DryRun => writeln!(output, "Dry run: no Time Machine exclusions were changed."),
+        ReportMode::Apply => writeln!(output, "Apply mode: Time Machine exclusions were updated."),
     }
 }
 
-fn render_roots(output: &mut String, report: &ScanReport) -> Result<(), fmt::Error> {
-    if report.roots.len() == 1 {
+fn render_roots(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
+    if report.scan.roots.len() == 1 {
         writeln!(output, "Scanning 1 root:")?;
     } else {
-        writeln!(output, "Scanning {} roots:", report.roots.len())?;
+        writeln!(output, "Scanning {} roots:", report.scan.roots.len())?;
     }
 
-    for root in &report.roots {
+    for root in &report.scan.roots {
         writeln!(output, "- {root}")?;
     }
 
@@ -83,30 +100,34 @@ fn render_roots(output: &mut String, report: &ScanReport) -> Result<(), fmt::Err
 
 fn render_matches(
     output: &mut String,
-    report: &ScanReport,
-    _mode: ReportMode,
+    report: &RunReport,
+    mode: ReportMode,
 ) -> Result<(), fmt::Error> {
     writeln!(output, "Matched directories:")?;
 
-    if report.matches.is_empty() {
+    if report.actions.is_empty() {
         writeln!(output, "- no matches")?;
     } else {
-        for dependency_match in &report.matches {
-            writeln!(output, "- {}", dependency_match.path)?;
-            writeln!(output, "    matched: {}", dependency_match.rule_id)?;
-            writeln!(output, "    evidence: {}", evidence_label(dependency_match))?;
+        for action in &report.actions {
+            writeln!(output, "- {}", action.path)?;
+            writeln!(output, "    matched: {}", action.rule_id)?;
+            writeln!(output, "    evidence: {}", evidence_label(action))?;
+
+            if mode == ReportMode::Apply {
+                writeln!(output, "    action: {}", action_label(&action.outcome))?;
+            }
         }
     }
 
     writeln!(output)
 }
 
-fn evidence_label(dependency_match: &crate::scan::DependencyMatch) -> String {
-    if dependency_match.evidence.is_empty() {
+fn evidence_label(action: &ExclusionAction) -> String {
+    if action.evidence.is_empty() {
         return "none".to_string();
     }
 
-    dependency_match
+    action
         .evidence
         .iter()
         .map(|matched_evidence| matched_evidence.path.to_string())
@@ -114,12 +135,22 @@ fn evidence_label(dependency_match: &crate::scan::DependencyMatch) -> String {
         .join(", ")
 }
 
+fn action_label(outcome: &ExclusionOutcome) -> &'static str {
+    match outcome {
+        ExclusionOutcome::DryRun => "would add exclusion",
+        ExclusionOutcome::AlreadyExcluded => "already excluded",
+        ExclusionOutcome::NewlyExcluded => "added exclusion",
+        ExclusionOutcome::StatusFailed(_) => "failed to determine exclusion status",
+        ExclusionOutcome::AddFailed(_) => "failed to add exclusion",
+    }
+}
+
 fn render_skipped(
     output: &mut String,
-    report: &ScanReport,
+    report: &RunReport,
     verbosity: ReportVerbosity,
 ) -> Result<(), fmt::Error> {
-    if report.skipped.is_empty() {
+    if report.scan.skipped.is_empty() {
         return Ok(());
     }
 
@@ -133,7 +164,7 @@ fn render_skipped(
     match verbosity {
         ReportVerbosity::Normal => render_grouped_skipped(output, report)?,
         ReportVerbosity::Verbose | ReportVerbosity::Trace => {
-            for skipped_path in &report.skipped {
+            for skipped_path in &report.scan.skipped {
                 render_skipped_path(output, skipped_path)?;
             }
         }
@@ -142,7 +173,7 @@ fn render_skipped(
     writeln!(output)
 }
 
-fn render_grouped_skipped(output: &mut String, report: &ScanReport) -> Result<(), fmt::Error> {
+fn render_grouped_skipped(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
     for group in skipped_groups(report) {
         if group.paths.len() == 1 {
             render_skipped_path(output, &group.paths[0])?;
@@ -169,18 +200,35 @@ fn render_skipped_path(output: &mut String, skipped_path: &SkippedPath) -> Resul
     )
 }
 
-fn render_failures(output: &mut String, report: &ScanReport) -> Result<(), fmt::Error> {
-    if report.failures.is_empty() {
+fn render_failures(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
+    if report.scan.failures.is_empty() && backend_failures(report).is_empty() {
         return Ok(());
     }
 
     writeln!(output, "Failures:")?;
 
-    for failure in &report.failures {
+    for failure in &report.scan.failures {
         render_failure(output, failure)?;
     }
 
+    for action in backend_failures(report) {
+        render_backend_failure(output, action)?;
+    }
+
     writeln!(output)
+}
+
+fn backend_failures(report: &RunReport) -> Vec<&ExclusionAction> {
+    report
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.outcome,
+                ExclusionOutcome::StatusFailed(_) | ExclusionOutcome::AddFailed(_)
+            )
+        })
+        .collect()
 }
 
 fn render_failure(output: &mut String, failure: &ScanFailure) -> Result<(), fmt::Error> {
@@ -193,14 +241,28 @@ fn render_failure(output: &mut String, failure: &ScanFailure) -> Result<(), fmt:
     }
 }
 
-fn render_summary(output: &mut String, report: &ScanReport) -> Result<(), fmt::Error> {
+fn render_backend_failure(output: &mut String, action: &ExclusionAction) -> Result<(), fmt::Error> {
+    let diagnostic = match &action.outcome {
+        ExclusionOutcome::StatusFailed(diagnostic) | ExclusionOutcome::AddFailed(diagnostic) => {
+            diagnostic
+        }
+        ExclusionOutcome::DryRun
+        | ExclusionOutcome::AlreadyExcluded
+        | ExclusionOutcome::NewlyExcluded => return Ok(()),
+    };
+
+    writeln!(output, "- {}", action.path)?;
+    writeln!(output, "  error: {}", diagnostic.message)
+}
+
+fn render_summary(output: &mut String, report: &RunReport) -> Result<(), fmt::Error> {
     writeln!(output, "Summary:")?;
     writeln!(
         output,
         "{} matched, {} skipped, {} failed",
-        report.matches.len(),
-        report.skipped.len(),
-        report.failures.len()
+        report.actions.len(),
+        report.scan.skipped.len(),
+        report.scan.failures.len() + backend_failures(report).len()
     )
 }
 
@@ -225,11 +287,11 @@ struct SkippedGroup {
     paths: Vec<SkippedPath>,
 }
 
-fn skipped_groups(report: &ScanReport) -> Vec<SkippedGroup> {
+fn skipped_groups(report: &RunReport) -> Vec<SkippedGroup> {
     let mut groups: BTreeMap<(SkipReason, Utf8PathBuf), Vec<SkippedPath>> = BTreeMap::new();
 
-    for skipped_path in &report.skipped {
-        let bucket = skipped_bucket(skipped_path, &report.roots);
+    for skipped_path in &report.scan.skipped {
+        let bucket = skipped_bucket(skipped_path, &report.scan.roots);
         groups
             .entry((skipped_path.reason, bucket))
             .or_default()
@@ -285,8 +347,9 @@ mod tests {
     use camino::Utf8PathBuf;
 
     use super::*;
+    use crate::backend::BackendDiagnostic;
     use crate::rule::{Evidence, EvidenceKind, Target, TargetKind};
-    use crate::scan::{DependencyMatch, MatchedEvidence, SkippedPath};
+    use crate::scan::{DependencyMatch, MatchedEvidence, ScanReport, SkippedPath};
 
     #[test]
     fn renders_roots() {
@@ -322,6 +385,46 @@ mod tests {
         assert!(output.contains(
             "- /tmp/project/node_modules\n    matched: node\n    evidence: /tmp/project/package.json"
         ));
+    }
+
+    #[test]
+    fn renders_apply_outcomes() {
+        let report = RunReport {
+            scan: ScanReport::default(),
+            actions: vec![action(ExclusionOutcome::NewlyExcluded)],
+        };
+
+        let output = render_human_report(
+            &report,
+            ReportOptions::new(ReportMode::Apply, ReportVerbosity::Normal),
+        )
+        .unwrap();
+
+        assert!(output.contains("Apply mode: Time Machine exclusions were updated."));
+        assert!(output.contains("    action: added exclusion"));
+    }
+
+    #[test]
+    fn renders_backend_failures() {
+        let report = RunReport {
+            scan: ScanReport::default(),
+            actions: vec![action(ExclusionOutcome::AddFailed(BackendDiagnostic {
+                path: Utf8PathBuf::from("/tmp/project/node_modules"),
+                message: "tmutil failed".to_string(),
+                stdout: String::new(),
+                stderr: "bad path".to_string(),
+                status_code: Some(1),
+            }))],
+        };
+
+        let output = render_human_report(
+            &report,
+            ReportOptions::new(ReportMode::Apply, ReportVerbosity::Normal),
+        )
+        .unwrap();
+
+        assert!(output.contains("Failures:\n- /tmp/project/node_modules\n  error: tmutil failed"));
+        assert!(output.contains("Summary:\n1 matched, 0 skipped, 1 failed"));
     }
 
     #[test]
@@ -501,7 +604,8 @@ mod tests {
     }
 
     fn render_with_verbosity(report: &ScanReport, verbosity: ReportVerbosity) -> String {
-        render_human_report(report, ReportOptions::dry_run(verbosity)).unwrap()
+        let report = RunReport::dry_run(report.clone());
+        render_human_report(&report, ReportOptions::dry_run(verbosity)).unwrap()
     }
 
     fn node_match() -> DependencyMatch {
@@ -516,6 +620,18 @@ mod tests {
                 evidence: Evidence::candidate_parent("package.json", EvidenceKind::File),
                 path: Utf8PathBuf::from("/tmp/project/package.json"),
             }],
+        }
+    }
+
+    fn action(outcome: ExclusionOutcome) -> ExclusionAction {
+        let dependency_match = node_match();
+
+        ExclusionAction {
+            path: dependency_match.path,
+            rule_id: dependency_match.rule_id,
+            target: dependency_match.target,
+            evidence: dependency_match.evidence,
+            outcome,
         }
     }
 }

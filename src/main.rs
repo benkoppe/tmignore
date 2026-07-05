@@ -2,7 +2,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use tmignore::cli::Cli;
-use tmignore::report::{ReportOptions, render_human_report};
+use tmignore::config::RunMode;
+use tmignore::report::{ReportMode, ReportOptions, render_human_report};
+use tmignore::run::RunReport;
 use tmignore::scan::scan;
 
 fn main() -> ExitCode {
@@ -10,8 +12,10 @@ fn main() -> ExitCode {
     let report_verbosity = cli.report_verbosity();
     let config = cli.into_config();
 
-    if !config.dry_run {
-        eprintln!("tmignore only supports --dry-run until the Time Machine backend is implemented");
+    if config.mode == RunMode::Apply {
+        eprintln!(
+            "tmignore --apply requires the Time Machine backend, which is not implemented yet"
+        );
         return ExitCode::FAILURE;
     }
 
@@ -23,7 +27,10 @@ fn main() -> ExitCode {
         }
     };
 
-    match render_human_report(&report, ReportOptions::dry_run(report_verbosity)) {
+    let report = RunReport::dry_run(report);
+    let report_options = ReportOptions::new(ReportMode::from(config.mode), report_verbosity);
+
+    match render_human_report(&report, report_options) {
         Ok(rendered) => {
             print!("{rendered}");
             ExitCode::SUCCESS
