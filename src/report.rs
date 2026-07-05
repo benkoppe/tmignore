@@ -6,6 +6,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::scan::SkippedPath;
 use crate::scan::{ScanFailure, ScanReport, SkipReason};
 
+const SYMLINK_GROUP_COMPONENTS: usize = 3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReportMode {
     DryRun,
@@ -231,7 +233,7 @@ fn skipped_groups(report: &ScanReport) -> Vec<SkippedGroup> {
     let mut groups: BTreeMap<(SkipReason, Utf8PathBuf), Vec<SkippedPath>> = BTreeMap::new();
 
     for skipped_path in &report.skipped {
-        let bucket = skipped_bucket(&skipped_path.path, &report.roots);
+        let bucket = skipped_bucket(skipped_path, &report.roots);
         groups
             .entry((skipped_path.reason, bucket))
             .or_default()
@@ -248,18 +250,38 @@ fn skipped_groups(report: &ScanReport) -> Vec<SkippedGroup> {
         .collect()
 }
 
-fn skipped_bucket(path: &Utf8Path, roots: &[Utf8PathBuf]) -> Utf8PathBuf {
-    roots
-        .iter()
-        .find_map(|root| bucket_relative_to_root(path, root))
-        .unwrap_or_else(|| path.to_path_buf())
+fn skipped_bucket(skipped_path: &SkippedPath, roots: &[Utf8PathBuf]) -> Utf8PathBuf {
+    match skipped_path.reason {
+        SkipReason::Symlink => symlink_bucket(&skipped_path.path, roots),
+        SkipReason::ConfiguredSkipPath => skipped_path.path.clone(),
+    }
 }
 
-fn bucket_relative_to_root(path: &Utf8Path, root: &Utf8Path) -> Option<Utf8PathBuf> {
-    let relative_path = path.strip_prefix(root).ok()?;
-    let first_component = relative_path.components().next()?;
+fn symlink_bucket(path: &Utf8Path, roots: &[Utf8PathBuf]) -> Utf8PathBuf {
+    let parent = path.parent().unwrap_or(path);
 
-    Some(root.join(first_component.as_str()))
+    roots
+        .iter()
+        .filter_map(|root| bucket_relative_to_root(parent, root, SYMLINK_GROUP_COMPONENTS))
+        .max_by_key(|bucket| bucket.as_str().len())
+        .unwrap_or_else(|| parent.to_path_buf())
+}
+
+fn bucket_relative_to_root(
+    path: &Utf8Path,
+    root: &Utf8Path,
+    max_components: usize,
+) -> Option<Utf8PathBuf> {
+    let relative_path = path.strip_prefix(root).ok()?;
+    let mut components = relative_path.components();
+    let first_component = components.next()?;
+    let mut bucket = root.join(first_component.as_str());
+
+    for component in components.take(max_components.saturating_sub(1)) {
+        bucket.push(component.as_str());
+    }
+
+    Some(bucket)
 }
 
 #[cfg(test)]
@@ -323,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn normal_verbosity_groups_repeated_skipped_paths_by_root_child() {
+    fn normal_verbosity_groups_repeated_skipped_symlinks_by_parent_directory() {
         let report = ScanReport {
             roots: vec![Utf8PathBuf::from(".")],
             skipped: vec![
@@ -345,10 +367,42 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(output.contains("- ./.direnv  2 symlinks skipped below this path"));
+        assert!(output.contains("- ./.direnv/flake-inputs  2 symlinks skipped below this path"));
         assert!(output.contains("- ./result  skipped symlink"));
         assert!(!output.contains("./.direnv/flake-inputs/first  skipped symlink"));
         assert!(!output.contains("./.direnv/flake-inputs/second  skipped symlink"));
+    }
+
+    #[test]
+    fn normal_verbosity_does_not_group_symlinks_by_broad_scan_root_child() {
+        let report = ScanReport {
+            roots: vec![Utf8PathBuf::from("../")],
+            skipped: vec![
+                SkippedPath {
+                    path: Utf8PathBuf::from("../forks/opencode/.direnv/first"),
+                    reason: SkipReason::Symlink,
+                },
+                SkippedPath {
+                    path: Utf8PathBuf::from("../forks/opencode/.direnv/second"),
+                    reason: SkipReason::Symlink,
+                },
+                SkippedPath {
+                    path: Utf8PathBuf::from("../forks/opentui/.direnv/first"),
+                    reason: SkipReason::Symlink,
+                },
+                SkippedPath {
+                    path: Utf8PathBuf::from("../forks/opentui/.direnv/second"),
+                    reason: SkipReason::Symlink,
+                },
+            ],
+            ..ScanReport::default()
+        };
+
+        let output = render(&report);
+
+        assert!(output.contains("- ../forks/opencode/.direnv  2 symlinks skipped below this path"));
+        assert!(output.contains("- ../forks/opentui/.direnv  2 symlinks skipped below this path"));
+        assert!(!output.contains("- ../forks  4 symlinks skipped below this path"));
     }
 
     #[test]
