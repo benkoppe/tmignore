@@ -18,7 +18,8 @@ fn dry_run_reports_matched_dependency_directory() {
             predicate::str::contains("Dry run: no Time Machine exclusions were changed.")
                 .and(predicate::str::contains("Matched directories:"))
                 .and(predicate::str::contains("node_modules"))
-                .and(predicate::str::contains("node; evidence:"))
+                .and(predicate::str::contains("    matched: node"))
+                .and(predicate::str::contains("    evidence:"))
                 .and(predicate::str::contains("package.json"))
                 .and(predicate::str::contains("Summary:")),
         );

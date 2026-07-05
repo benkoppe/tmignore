@@ -92,13 +92,9 @@ fn render_matches(
         writeln!(output, "- no matches")?;
     } else {
         for dependency_match in &report.matches {
-            writeln!(
-                output,
-                "- {}  {}; evidence: {}",
-                dependency_match.path,
-                dependency_match.rule_id,
-                evidence_label(dependency_match)
-            )?;
+            writeln!(output, "- {}", dependency_match.path)?;
+            writeln!(output, "    matched: {}", dependency_match.rule_id)?;
+            writeln!(output, "    evidence: {}", evidence_label(dependency_match))?;
         }
     }
 
@@ -323,10 +319,9 @@ mod tests {
 
         let output = render(&report);
 
-        assert!(
-            output
-                .contains("- /tmp/project/node_modules  node; evidence: /tmp/project/package.json")
-        );
+        assert!(output.contains(
+            "- /tmp/project/node_modules\n    matched: node\n    evidence: /tmp/project/package.json"
+        ));
     }
 
     #[test]
