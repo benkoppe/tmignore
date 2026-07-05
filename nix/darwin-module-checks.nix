@@ -80,6 +80,18 @@ let
     };
   };
 
+  invalidSchedule = builtins.tryEval (
+    (evalDarwin {
+      enable = true;
+      package = self'.packages.tmignore;
+      roots = [ "~/Developer" ];
+      schedule = {
+        Hour = 3;
+        Minute = 30;
+      };
+    }).config.launchd.user.agents.tmignore.serviceConfig.StartCalendarInterval
+  );
+
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
   extraRulesAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
@@ -93,6 +105,7 @@ in
     set -eu
 
     test "${if disabled.config.launchd.user.agents ? tmignore then "true" else "false"}" = "false"
+    test "${if invalidSchedule.success then "true" else "false"}" = "false"
 
     test "${builtins.elemAt dryRunAgent.ProgramArguments 0}" = "${lib.getExe self'.packages.tmignore}"
     test "${builtins.elemAt dryRunAgent.ProgramArguments 1}" = "--config"

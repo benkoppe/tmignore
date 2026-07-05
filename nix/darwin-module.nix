@@ -110,11 +110,6 @@ let
     };
   };
 
-  scheduleType = lib.types.either calendarIntervalType (lib.types.listOf calendarIntervalType);
-
-  scheduleEntries = if builtins.isList cfg.schedule then cfg.schedule else [ cfg.schedule ];
-  normalizedSchedule = map (entry: lib.filterAttrs (_: value: value != null) entry) scheduleEntries;
-
   tmignoreConfig = toml.generate "tmignore.toml" {
     roots = cfg.roots;
     skip_paths = cfg.skipPaths;
@@ -196,18 +191,20 @@ in
     };
 
     schedule = lib.mkOption {
-      type = scheduleType;
-      default = {
-        Hour = 3;
-        Minute = 30;
-      };
+      type = lib.types.listOf calendarIntervalType;
+      default = [
+        {
+          Hour = 3;
+          Minute = 30;
+        }
+      ];
       example = lib.literalExpression ''
         [
           { Hour = 9; Minute = 0; }
           { Hour = 17; Minute = 0; }
         ]
       '';
-      description = "launchd StartCalendarInterval value or values for scheduled tmignore runs.";
+      description = "launchd StartCalendarInterval values for scheduled tmignore runs.";
     };
 
     runAtLoad = lib.mkOption {
@@ -242,7 +239,7 @@ in
     launchd.user.agents.tmignore.serviceConfig = {
       Label = "com.github.benkoppe.tmignore";
       ProgramArguments = programArguments;
-      StartCalendarInterval = normalizedSchedule;
+      StartCalendarInterval = cfg.schedule;
       RunAtLoad = cfg.runAtLoad;
     }
     // lib.optionalAttrs (cfg.stdoutPath != null) {

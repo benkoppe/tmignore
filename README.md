@@ -31,13 +31,12 @@ Import the module from the flake and enable the service:
 The default schedule is daily at 03:30 local time:
 
 ```nix
-services.tmignore.schedule = {
-  Hour = 3;
-  Minute = 30;
-};
+services.tmignore.schedule = [
+  { Hour = 3; Minute = 30; }
+];
 ```
 
-To run multiple times per day, provide a list:
+To run multiple times per day, add more entries:
 
 ```nix
 services.tmignore.schedule = [
