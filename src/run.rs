@@ -104,7 +104,10 @@ mod tests {
 
     #[test]
     fn dry_run_creates_actions_without_backend() {
-        let scan = scan_report(vec![dependency_match("/tmp/project/node_modules", "node")]);
+        let scan = scan_report(vec![dependency_match(
+            "/tmp/project/node_modules",
+            "node.node-modules",
+        )]);
 
         let report = RunReport::dry_run(scan);
 
@@ -114,7 +117,10 @@ mod tests {
 
     #[test]
     fn apply_excludes_included_paths() {
-        let scan = scan_report(vec![dependency_match("/tmp/project/node_modules", "node")]);
+        let scan = scan_report(vec![dependency_match(
+            "/tmp/project/node_modules",
+            "node.node-modules",
+        )]);
         let backend = FakeBackend::default();
 
         let report = RunReport::apply(scan, &backend);
@@ -128,7 +134,10 @@ mod tests {
 
     #[test]
     fn apply_skips_already_excluded_paths() {
-        let scan = scan_report(vec![dependency_match("/tmp/project/target", "rust")]);
+        let scan = scan_report(vec![dependency_match(
+            "/tmp/project/target",
+            "rust.cargo-target",
+        )]);
         let backend = FakeBackend::default().with_excluded("/tmp/project/target");
 
         let report = RunReport::apply(scan, &backend);
@@ -139,7 +148,10 @@ mod tests {
 
     #[test]
     fn apply_reports_status_failures() {
-        let scan = scan_report(vec![dependency_match("/tmp/project/target", "rust")]);
+        let scan = scan_report(vec![dependency_match(
+            "/tmp/project/target",
+            "rust.cargo-target",
+        )]);
         let diagnostic = diagnostic("/tmp/project/target", "status failed");
         let backend = FakeBackend::default().with_status_failure(diagnostic.clone());
 
@@ -155,8 +167,8 @@ mod tests {
     #[test]
     fn apply_reports_add_failures_and_continues() {
         let scan = scan_report(vec![
-            dependency_match("/tmp/project/target", "rust"),
-            dependency_match("/tmp/project/node_modules", "node"),
+            dependency_match("/tmp/project/target", "rust.cargo-target"),
+            dependency_match("/tmp/project/node_modules", "node.node-modules"),
         ]);
         let diagnostic = diagnostic("/tmp/project/target", "add failed");
         let backend = FakeBackend::default().with_add_failure(diagnostic.clone());

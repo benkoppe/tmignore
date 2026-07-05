@@ -173,7 +173,7 @@ fn match_dependency(
             let mut requirements_satisfied = true;
 
             for requirement in &rule_case.requirements {
-                match satisfy_requirement(candidate_path, &requirement.any_of) {
+                match satisfy_requirement(candidate_path, &target, &requirement.any_of) {
                     RequirementResult::Satisfied(evidence) => matched_evidence.push(evidence),
                     RequirementResult::Unsatisfied { failures } => {
                         requirements_satisfied = false;
@@ -227,12 +227,13 @@ enum RequirementResult {
 
 fn satisfy_requirement(
     candidate_path: &Utf8Path,
+    target: &Target,
     evidence_options: &[Evidence],
 ) -> RequirementResult {
     let mut failures = Vec::new();
 
     for evidence in evidence_options {
-        let path = evidence.resolve_against(candidate_path);
+        let path = evidence.resolve_against_target(candidate_path, &target.path);
 
         match evidence_exists(&path, evidence.kind) {
             Ok(true) => {
@@ -318,7 +319,7 @@ mod tests {
         let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
-        assert_eq!(report.matches[0].rule_id, "node");
+        assert_eq!(report.matches[0].rule_id, "node.node-modules");
         assert_eq!(report.matches[0].target.path, "node_modules");
         assert_eq!(report.matches[0].evidence[0].evidence.path, "package.json");
     }
@@ -343,7 +344,7 @@ mod tests {
         let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
-        assert_eq!(report.matches[0].rule_id, "python-venv");
+        assert_eq!(report.matches[0].rule_id, "python.venv");
         assert_eq!(report.matches[0].target.path, "venv");
     }
 
@@ -366,14 +367,83 @@ mod tests {
     #[test]
     fn allows_any_evidence_within_requirement() {
         let fixture = Fixture::new();
-        fixture.dir("project/vendor");
-        fixture.file("project/Gemfile");
+        fixture.dir("project/.gradle");
+        fixture.file("project/settings.gradle.kts");
 
         let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
 
         assert_eq!(report.matches.len(), 1);
-        assert_eq!(report.matches[0].rule_id, "vendor");
-        assert_eq!(report.matches[0].evidence[0].evidence.path, "Gemfile");
+        assert_eq!(report.matches[0].rule_id, "gradle.cache");
+        assert_eq!(
+            report.matches[0].evidence[0].evidence.path,
+            "settings.gradle.kts"
+        );
+    }
+
+    #[test]
+    fn default_rules_match_declared_dependency_directories() {
+        let fixture = Fixture::new();
+        let cases = [
+            ("node.node-modules", "node_modules", "package.json"),
+            ("node.parcel-cache", ".parcel-cache", "package.json"),
+            ("rust.cargo-target", "target", "Cargo.toml"),
+            ("php.composer-vendor", "vendor", "composer.json"),
+            ("go.vendor", "vendor", "go.mod"),
+            ("ruby.bundle-vendor", "vendor/bundle", "Gemfile"),
+            ("python.venv", ".venv", "pyproject.toml"),
+            ("python.tox", ".tox", "tox.ini"),
+            ("python.nox", ".nox", "noxfile.py"),
+            ("swift.build", ".build", "Package.swift"),
+            ("elixir.deps", "deps", "mix.exs"),
+            ("elixir.build", ".build", "mix.exs"),
+            ("gradle.cache", ".gradle", "settings.gradle"),
+            ("gradle.build", "build", "build.gradle.kts"),
+            ("dart.tool", ".dart_tool", "pubspec.yaml"),
+            ("dart.packages", ".packages", "pubspec.yaml"),
+            ("dart.build", "build", "pubspec.yaml"),
+            ("haskell.stack-work", ".stack-work", "stack.yaml"),
+            ("vagrant.state", ".vagrant", "Vagrantfile"),
+            ("ios.carthage", "Carthage", "Cartfile"),
+            ("ios.cocoapods", "Pods", "Podfile"),
+            ("terragrunt.cache", ".terragrunt-cache", "terragrunt.hcl"),
+            ("aws-cdk.out", "cdk.out", "cdk.json"),
+            ("java.maven-target", "target", "pom.xml"),
+            ("scala.sbt-target", "target", "project/plugins.sbt"),
+        ];
+
+        for (index, (_, target, evidence)) in cases.iter().enumerate() {
+            let project = format!("project-{index}");
+            fixture.dir(&format!("{project}/{target}"));
+            fixture.file(&format!("{project}/{evidence}"));
+        }
+
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
+
+        assert_eq!(report.matches.len(), cases.len());
+        for (rule_id, target, evidence) in cases {
+            assert!(report.matches.iter().any(|dependency_match| {
+                dependency_match.rule_id == rule_id
+                    && dependency_match.target.path == target
+                    && dependency_match
+                        .evidence
+                        .iter()
+                        .any(|matched_evidence| matched_evidence.evidence.path == evidence)
+            }));
+        }
+    }
+
+    #[test]
+    fn broad_default_targets_do_not_match_without_evidence() {
+        let fixture = Fixture::new();
+        fixture.dir("project/build");
+        fixture.dir("project/target");
+        fixture.dir("project/vendor");
+        fixture.dir("project/.build");
+
+        let report = scan_fixture(&fixture, crate::rule::default_rules(), &[]);
+
+        assert!(report.matches.is_empty());
+        assert!(report.failures.is_empty());
     }
 
     #[test]
@@ -591,8 +661,19 @@ mod tests {
         let evidence = Evidence::candidate_parent("Cargo.toml", EvidenceKind::File);
 
         assert_eq!(
-            evidence.resolve_against(Utf8Path::new("target")),
+            evidence.resolve_against_target(Utf8Path::new("target"), "target"),
             Utf8PathBuf::from("Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn resolves_target_parent_evidence_for_nested_targets() {
+        let evidence = Evidence::target_parent("Gemfile", EvidenceKind::File);
+
+        assert_eq!(
+            evidence
+                .resolve_against_target(Utf8Path::new("project/vendor/bundle"), "vendor/bundle"),
+            Utf8PathBuf::from("project/Gemfile")
         );
     }
 

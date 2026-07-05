@@ -410,7 +410,7 @@ mod tests {
         let output = render(&report);
 
         assert!(output.contains(
-            "- /tmp/project/node_modules\n    matched: node\n    evidence: /tmp/project/package.json"
+            "- /tmp/project/node_modules\n    matched: node.node-modules\n    evidence: /tmp/project/package.json"
         ));
     }
 
@@ -638,7 +638,7 @@ mod tests {
     fn node_match() -> DependencyMatch {
         DependencyMatch {
             path: Utf8PathBuf::from("/tmp/project/node_modules"),
-            rule_id: "node".to_string(),
+            rule_id: "node.node-modules".to_string(),
             target: Target::directory("node_modules"),
             evidence: vec![MatchedEvidence {
                 evidence: Evidence::candidate_parent("package.json", EvidenceKind::File),

@@ -26,6 +26,7 @@ let
     package = self'.packages.tmignore;
     roots = [ "/Users/alice/Developer" ];
     skipPaths = [ "/Users/alice/Developer/archive" ];
+    disabledBuiltinRules = [ "node.parcel-cache" ];
     stdoutPath = "/tmp/tmignore.log";
     stderrPath = "/tmp/tmignore.error.log";
   };
@@ -170,6 +171,7 @@ in
     grep -q 'roots = \["/Users/alice/Developer"\]' '${dryRunConfig}'
     grep -q 'skip_paths = \["/Users/alice/Developer/archive"\]' '${dryRunConfig}'
     grep -q 'builtin_rules = "defaults"' '${dryRunConfig}'
+    grep -q 'disabled_builtin_rules = \["node.parcel-cache"\]' '${dryRunConfig}'
 
     grep -q 'builtin_rules = "none"' '${extraRulesConfig}'
     grep -q '\[\[extra_rules.pnpm_store.cases\]\]' '${extraRulesConfig}'

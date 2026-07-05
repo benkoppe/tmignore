@@ -55,6 +55,7 @@ pub enum EvidenceKind {
 pub enum EvidenceBase {
     Candidate,
     CandidateParent,
+    TargetParent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,51 +121,116 @@ impl Evidence {
         }
     }
 
-    pub fn resolve_against(&self, candidate_path: &Utf8Path) -> Utf8PathBuf {
+    pub fn target_parent(path: impl Into<String>, kind: EvidenceKind) -> Self {
+        Self {
+            path: path.into(),
+            kind,
+            base: EvidenceBase::TargetParent,
+        }
+    }
+
+    pub fn resolve_against_target(
+        &self,
+        candidate_path: &Utf8Path,
+        target_path: &str,
+    ) -> Utf8PathBuf {
         match self.base {
             EvidenceBase::Candidate => candidate_path.join(&self.path),
             EvidenceBase::CandidateParent => candidate_path
                 .parent()
                 .unwrap_or_else(|| Utf8Path::new("."))
                 .join(&self.path),
+            EvidenceBase::TargetParent => {
+                target_parent(candidate_path, target_path).join(&self.path)
+            }
         }
     }
+}
+
+fn target_parent<'a>(candidate_path: &'a Utf8Path, target_path: &str) -> &'a Utf8Path {
+    let mut parent = candidate_path;
+
+    for _ in Utf8Path::new(target_path).components() {
+        parent = parent.parent().unwrap_or_else(|| Utf8Path::new("."));
+    }
+
+    parent
 }
 
 const FILE: EvidenceKind = EvidenceKind::File;
 
 pub fn default_rules() -> Vec<Rule> {
     vec![
-        single_target_rule("node", "node_modules", vec!["package.json"]),
-        single_target_rule("rust", "target", vec!["Cargo.toml"]),
-        single_target_rule(
-            "vendor",
-            "vendor",
-            vec!["composer.json", "Gemfile", "go.mod"],
-        ),
+        single_target_rule("node.node-modules", "node_modules", vec!["package.json"]),
+        single_target_rule("node.parcel-cache", ".parcel-cache", vec!["package.json"]),
+        single_target_rule("rust.cargo-target", "target", vec!["Cargo.toml"]),
+        single_target_rule("php.composer-vendor", "vendor", vec!["composer.json"]),
+        single_target_rule("go.vendor", "vendor", vec!["go.mod"]),
         Rule::new(
-            "python-venv",
+            "ruby.bundle-vendor",
             vec![RuleCase::new(
-                vec![Target::directory(".venv"), Target::directory("venv")],
-                vec![Requirement::any_of(vec![
-                    Evidence::candidate_parent("pyproject.toml", FILE),
-                    Evidence::candidate_parent("requirements.txt", FILE),
-                ])],
+                vec![Target::directory("vendor/bundle")],
+                vec![Requirement::any_of(vec![Evidence::target_parent(
+                    "Gemfile", FILE,
+                )])],
             )],
         ),
-        single_target_rule("tox", ".tox", vec!["tox.ini"]),
-        single_target_rule("nox", ".nox", vec!["noxfile.py"]),
-        single_target_rule("parcel", ".parcel-cache", vec!["package.json"]),
-        single_target_rule("terragrunt", ".terragrunt-cache", vec!["terragrunt.hcl"]),
-        single_target_rule("cdk", "cdk.out", vec!["cdk.json"]),
+        multi_target_rule(
+            "python.venv",
+            vec![".venv", "venv"],
+            vec!["pyproject.toml", "requirements.txt"],
+        ),
+        single_target_rule("python.tox", ".tox", vec!["tox.ini"]),
+        single_target_rule("python.nox", ".nox", vec!["noxfile.py"]),
+        single_target_rule("swift.build", ".build", vec!["Package.swift"]),
+        single_target_rule("elixir.deps", "deps", vec!["mix.exs"]),
+        single_target_rule("elixir.build", ".build", vec!["mix.exs"]),
+        single_target_rule(
+            "gradle.cache",
+            ".gradle",
+            vec![
+                "build.gradle",
+                "build.gradle.kts",
+                "settings.gradle",
+                "settings.gradle.kts",
+            ],
+        ),
+        single_target_rule(
+            "gradle.build",
+            "build",
+            vec!["build.gradle", "build.gradle.kts"],
+        ),
+        single_target_rule("dart.tool", ".dart_tool", vec!["pubspec.yaml"]),
+        single_target_rule("dart.packages", ".packages", vec!["pubspec.yaml"]),
+        single_target_rule("dart.build", "build", vec!["pubspec.yaml"]),
+        single_target_rule("haskell.stack-work", ".stack-work", vec!["stack.yaml"]),
+        single_target_rule("vagrant.state", ".vagrant", vec!["Vagrantfile"]),
+        single_target_rule("ios.carthage", "Carthage", vec!["Cartfile"]),
+        single_target_rule("ios.cocoapods", "Pods", vec!["Podfile"]),
+        single_target_rule(
+            "terragrunt.cache",
+            ".terragrunt-cache",
+            vec!["terragrunt.hcl"],
+        ),
+        single_target_rule("aws-cdk.out", "cdk.out", vec!["cdk.json"]),
+        single_target_rule("java.maven-target", "target", vec!["pom.xml"]),
+        single_target_rule(
+            "scala.sbt-target",
+            "target",
+            vec!["build.sbt", "project/plugins.sbt"],
+        ),
     ]
 }
 
 fn single_target_rule(id: &str, target: &str, parent_evidence: Vec<&str>) -> Rule {
+    multi_target_rule(id, vec![target], parent_evidence)
+}
+
+fn multi_target_rule(id: &str, targets: Vec<&str>, parent_evidence: Vec<&str>) -> Rule {
     Rule::new(
         id,
         vec![RuleCase::new(
-            vec![Target::directory(target)],
+            targets.into_iter().map(Target::directory).collect(),
             vec![Requirement::any_of(
                 parent_evidence
                     .into_iter()

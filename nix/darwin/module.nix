@@ -76,6 +76,7 @@ let
         type = lib.types.enum [
           "candidate"
           "candidate_parent"
+          "target_parent"
         ];
         description = "Base path used to resolve this evidence path.";
       };
@@ -114,6 +115,7 @@ let
     roots = cfg.roots;
     skip_paths = cfg.skipPaths;
     builtin_rules = cfg.builtinRules;
+    disabled_builtin_rules = cfg.disabledBuiltinRules;
     extra_rules = cfg.extraRules;
   };
 
@@ -166,6 +168,13 @@ in
       ];
       default = "defaults";
       description = "Builtin rule set policy written to tmignore's generated TOML config.";
+    };
+
+    disabledBuiltinRules = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "node.parcel-cache" ];
+      description = "Built-in rule IDs to disable while keeping the rest of the default catalog enabled.";
     };
 
     extraRules = lib.mkOption {

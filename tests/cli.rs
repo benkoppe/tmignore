@@ -18,7 +18,7 @@ fn dry_run_reports_matched_dependency_directory() {
             predicate::str::contains("Dry run: no Time Machine exclusions were changed.")
                 .and(predicate::str::contains("Matched directories:"))
                 .and(predicate::str::contains("node_modules"))
-                .and(predicate::str::contains("    matched: node"))
+                .and(predicate::str::contains("    matched: node.node-modules"))
                 .and(predicate::str::contains("    evidence:"))
                 .and(predicate::str::contains("package.json"))
                 .and(predicate::str::contains("Summary:")),
@@ -63,7 +63,7 @@ fn dry_run_uses_config_file_roots() {
         .stdout(
             predicate::str::contains("Matched directories:")
                 .and(predicate::str::contains("node_modules"))
-                .and(predicate::str::contains("    matched: node")),
+                .and(predicate::str::contains("    matched: node.node-modules")),
         );
 }
 
@@ -88,7 +88,7 @@ fn cli_roots_replace_config_file_roots() {
         .success()
         .stdout(
             predicate::str::contains(format!("Scanning 1 root:\n- {cli_root}"))
-                .and(predicate::str::contains("    matched: rust"))
+                .and(predicate::str::contains("    matched: rust.cargo-target"))
                 .and(predicate::str::contains("config-project").not()),
         );
 }

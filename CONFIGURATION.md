@@ -73,6 +73,14 @@ Default: `"defaults"`
 
 Controls whether built-in dependency/cache rules are enabled. This value is written to TOML as `builtin_rules`.
 
+`services.tmignore.disabledBuiltinRules`
+
+Type: list of strings
+
+Default: `[]`
+
+Built-in rule IDs to disable while keeping the rest of the default catalog enabled. These values are written to TOML as `disabled_builtin_rules`.
+
 `services.tmignore.extraRules`
 
 Type: attribute set of rules
@@ -139,6 +147,7 @@ in
     skipPaths = [ "${home}/Developer/archive" ];
     mode = "apply";
     builtinRules = "defaults";
+    disabledBuiltinRules = [ "node.parcel-cache" ];
     schedule = [
       { Hour = 9; Minute = 0; }
       { Hour = 17; Minute = 0; }
@@ -199,6 +208,14 @@ Default: `"defaults"`
 
 Controls whether built-in rules are enabled.
 
+`disabled_builtin_rules`
+
+Type: array of strings
+
+Default: `[]`
+
+Built-in rule IDs to disable. Unknown IDs are rejected. Built-in rule IDs remain reserved and cannot be reused by `extra_rules`.
+
 `extra_rules`
 
 Type: table of named rules
@@ -206,6 +223,38 @@ Type: table of named rules
 Default: `{}`
 
 Additional dependency/cache rules.
+
+### Built-In Rules
+
+The `defaults` catalog contains these built-in rules:
+
+| Rule ID | Target | Evidence |
+| --- | --- | --- |
+| `node.node-modules` | `node_modules` | `package.json` |
+| `node.parcel-cache` | `.parcel-cache` | `package.json` |
+| `rust.cargo-target` | `target` | `Cargo.toml` |
+| `php.composer-vendor` | `vendor` | `composer.json` |
+| `go.vendor` | `vendor` | `go.mod` |
+| `ruby.bundle-vendor` | `vendor/bundle` | `Gemfile` |
+| `python.venv` | `.venv`, `venv` | `pyproject.toml`, `requirements.txt` |
+| `python.tox` | `.tox` | `tox.ini` |
+| `python.nox` | `.nox` | `noxfile.py` |
+| `swift.build` | `.build` | `Package.swift` |
+| `elixir.deps` | `deps` | `mix.exs` |
+| `elixir.build` | `.build` | `mix.exs` |
+| `gradle.cache` | `.gradle` | `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts` |
+| `gradle.build` | `build` | `build.gradle`, `build.gradle.kts` |
+| `dart.tool` | `.dart_tool` | `pubspec.yaml` |
+| `dart.packages` | `.packages` | `pubspec.yaml` |
+| `dart.build` | `build` | `pubspec.yaml` |
+| `haskell.stack-work` | `.stack-work` | `stack.yaml` |
+| `vagrant.state` | `.vagrant` | `Vagrantfile` |
+| `ios.carthage` | `Carthage` | `Cartfile` |
+| `ios.cocoapods` | `Pods` | `Podfile` |
+| `terragrunt.cache` | `.terragrunt-cache` | `terragrunt.hcl` |
+| `aws-cdk.out` | `cdk.out` | `cdk.json` |
+| `java.maven-target` | `target` | `pom.xml` |
+| `scala.sbt-target` | `target` | `build.sbt`, `project/plugins.sbt` |
 
 ### Path Handling
 
@@ -271,9 +320,9 @@ Evidence fields:
 
 `kind`: one of `"file"`, `"directory"`, or `"any"`.
 
-`base`: one of `"candidate"` or `"candidate_parent"`.
+`base`: one of `"candidate"`, `"candidate_parent"`, or `"target_parent"`.
 
-`candidate` resolves the evidence path inside the candidate target directory. `candidate_parent` resolves it next to the candidate target directory.
+`candidate` resolves the evidence path inside the candidate target directory. `candidate_parent` resolves it next to the candidate target directory. `target_parent` resolves it next to the configured target path, which is useful for nested targets such as `vendor/bundle` with a project-level `Gemfile`.
 
 ### TOML Example
 
@@ -281,6 +330,7 @@ Evidence fields:
 roots = ["/Users/alice/Developer"]
 skip_paths = ["/Users/alice/Developer/archive"]
 builtin_rules = "defaults"
+disabled_builtin_rules = ["node.parcel-cache"]
 
 [[extra_rules.pnpm_store.cases]]
 

@@ -36,6 +36,8 @@ struct FileConfig {
     #[serde(default)]
     builtin_rules: BuiltinRuleMode,
     #[serde(default)]
+    disabled_builtin_rules: Vec<String>,
+    #[serde(default)]
     extra_rules: BTreeMap<String, FileRule>,
 }
 
@@ -109,7 +111,11 @@ impl Config {
         let mut skip_paths = file_config.skip_paths;
         skip_paths.extend(cli_skip_paths);
 
-        let rules = build_rules(file_config.builtin_rules, file_config.extra_rules)?;
+        let rules = build_rules(
+            file_config.builtin_rules,
+            file_config.disabled_builtin_rules,
+            file_config.extra_rules,
+        )?;
 
         Ok(Self {
             roots,
@@ -154,10 +160,30 @@ fn load_file_config(path: &Utf8Path) -> Result<FileConfig, ConfigError> {
 
 fn build_rules(
     builtin_rules: BuiltinRuleMode,
+    disabled_builtin_rules: Vec<String>,
     extra_rules: BTreeMap<String, FileRule>,
 ) -> Result<Vec<Rule>, ConfigError> {
+    let builtin_catalog = default_rules();
+    let builtin_rule_ids = builtin_catalog
+        .iter()
+        .map(|rule| rule.id.clone())
+        .collect::<HashSet<_>>();
+    let disabled_builtin_rule_ids = disabled_builtin_rules.into_iter().collect::<HashSet<_>>();
+
+    for rule_id in &disabled_builtin_rule_ids {
+        if !builtin_rule_ids.contains(rule_id) {
+            return Err(ConfigError::InvalidRule {
+                rule_id: rule_id.clone(),
+                message: "disabled built-in rule id does not exist".to_string(),
+            });
+        }
+    }
+
     let mut rules = match builtin_rules {
-        BuiltinRuleMode::Defaults => default_rules(),
+        BuiltinRuleMode::Defaults => builtin_catalog
+            .into_iter()
+            .filter(|rule| !disabled_builtin_rule_ids.contains(&rule.id))
+            .collect(),
         BuiltinRuleMode::None => Vec::new(),
     };
     let mut rule_ids = rules
@@ -166,6 +192,13 @@ fn build_rules(
         .collect::<HashSet<_>>();
 
     for (rule_id, file_rule) in extra_rules {
+        if builtin_rule_ids.contains(&rule_id) {
+            return Err(ConfigError::InvalidRule {
+                rule_id,
+                message: "rule id collides with a built-in rule".to_string(),
+            });
+        }
+
         let rule = Rule::new(rule_id.clone(), file_rule.cases);
         validate_rule(&rule)?;
 
@@ -407,12 +440,52 @@ skip_paths = ["config-skip"]
     }
 
     #[test]
+    fn disabled_builtin_rules_remove_specific_defaults() {
+        let fixture = Fixture::new();
+        let config_path = fixture.config_file(
+            r#"
+disabled_builtin_rules = ["node.node-modules"]
+"#,
+        );
+
+        let config =
+            Config::load(Some(&config_path), Vec::new(), Vec::new(), RunMode::DryRun).unwrap();
+
+        assert_eq!(config.rules.len(), default_rules().len() - 1);
+        assert!(
+            config
+                .rules
+                .iter()
+                .all(|rule| rule.id != "node.node-modules")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_disabled_builtin_rules() {
+        let fixture = Fixture::new();
+        let config_path = fixture.config_file(
+            r#"
+disabled_builtin_rules = ["missing.rule"]
+"#,
+        );
+
+        let error =
+            Config::load(Some(&config_path), Vec::new(), Vec::new(), RunMode::DryRun).unwrap_err();
+
+        assert!(matches!(
+            error,
+            ConfigError::InvalidRule { ref rule_id, ref message }
+                if rule_id == "missing.rule" && message.contains("does not exist")
+        ));
+    }
+
+    #[test]
     fn rejects_extra_rule_ids_that_collide_with_builtin_rules() {
         let fixture = Fixture::new();
         let config_path = fixture.config_file(
             r#"
-[extra_rules.node]
-[[extra_rules.node.cases]]
+[extra_rules."node.node-modules"]
+[[extra_rules."node.node-modules".cases]]
 targets = [{ path = ".custom-cache", kind = "directory" }]
 requirements = [
   { any_of = [{ path = "custom.toml", kind = "file", base = "candidate_parent" }] },
@@ -425,7 +498,7 @@ requirements = [
 
         assert!(matches!(
             error,
-            ConfigError::InvalidRule { ref rule_id, .. } if rule_id == "node"
+            ConfigError::InvalidRule { ref rule_id, .. } if rule_id == "node.node-modules"
         ));
     }
 
