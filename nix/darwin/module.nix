@@ -124,7 +124,7 @@ let
     global = {
       builtin_rules = globalCfg.builtinRules;
       disabled_builtin_rules = globalCfg.disabledBuiltinRules;
-      extra_rules = globalCfg.extraRules;
+      extra_targets = globalCfg.extraTargets;
     };
   };
 
@@ -155,6 +155,10 @@ let
     ".terraform.d/plugin-cache"
     "Library/Developer/Xcode/DerivedData"
     ".ollama/models"
+    ".config/lima/_disks"
+    ".config/lima/colima"
+    "Virtual Machines.localized"
+    "Virtual Machines"
   ];
   isAllowedGlobalExtraPath = path:
     path != ""
@@ -241,7 +245,7 @@ in
       };
     };
 
-    global = {
+      global = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = true;
@@ -264,7 +268,7 @@ in
         description = "Built-in global rule IDs to disable while keeping the rest of the default catalog enabled.";
       };
 
-      extraRules = lib.mkOption {
+      extraTargets = lib.mkOption {
         type = lib.types.attrsOf (lib.types.submodule {
           options.path = lib.mkOption {
             type = lib.types.str;
@@ -277,7 +281,7 @@ in
             custom_cache.path = ".cargo/registry/custom";
           }
         '';
-        description = "Named extra global cache rules written under global.extra_rules in tmignore's TOML config.";
+        description = "Named extra global cache targets written under global.extra_targets in tmignore's TOML config.";
       };
     };
 
@@ -334,8 +338,8 @@ in
         message = "services.tmignore.scan.skipPaths must contain absolute paths; use config.users.users.<name>.home instead of `~`.";
       }
       {
-        assertion = lib.all isAllowedGlobalExtraPath (lib.mapAttrsToList (_: rule: rule.path) globalCfg.extraRules);
-        message = "services.tmignore.global.extraRules paths must be home-relative paths under a known cache namespace.";
+        assertion = !globalCfg.enable || lib.all isAllowedGlobalExtraPath (lib.mapAttrsToList (_: target: target.path) globalCfg.extraTargets);
+        message = "services.tmignore.global.extraTargets paths must be home-relative paths under a known cache namespace.";
       }
     ];
 

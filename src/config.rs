@@ -89,7 +89,7 @@ struct FileGlobalConfig {
     #[serde(default)]
     disabled_builtin_rules: Vec<String>,
     #[serde(default)]
-    extra_rules: BTreeMap<String, FileGlobalRule>,
+    extra_targets: BTreeMap<String, FileGlobalRule>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -277,7 +277,7 @@ impl GlobalConfig {
             rules: build_global_rules(
                 file_config.builtin_rules,
                 file_config.disabled_builtin_rules,
-                file_config.extra_rules,
+                file_config.extra_targets,
             )?,
         })
     }
@@ -387,7 +387,7 @@ fn build_rules(
 fn build_global_rules(
     builtin_rules: BuiltinRuleMode,
     disabled_builtin_rules: Vec<String>,
-    extra_rules: BTreeMap<String, FileGlobalRule>,
+    extra_targets: BTreeMap<String, FileGlobalRule>,
 ) -> Result<Vec<GlobalRule>, ConfigError> {
     let builtin_catalog = default_global_rules();
     for rule in &builtin_catalog {
@@ -421,7 +421,7 @@ fn build_global_rules(
         .map(|rule| rule.id.clone())
         .collect::<HashSet<_>>();
 
-    for (rule_id, file_rule) in extra_rules {
+    for (rule_id, file_rule) in extra_targets {
         if builtin_rule_ids.contains(&rule_id) {
             return Err(ConfigError::InvalidGlobalRule {
                 rule_id,
@@ -493,13 +493,6 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
         return invalid_global_rule(rule_id, "global rule path must not contain `.` components");
     }
 
-    if normal_component_count(path) < 2 {
-        return invalid_global_rule(
-            rule_id,
-            "global rule path is too broad; use a precise cache subdirectory",
-        );
-    }
-
     if let Some(last_component) = path.components().next_back()
         && is_broad_global_component(last_component.as_str())
     {
@@ -517,12 +510,6 @@ fn validate_global_rule_path(rule_id: &str, path: &Utf8Path) -> Result<(), Confi
     }
 
     Ok(())
-}
-
-fn normal_component_count(path: &Utf8Path) -> usize {
-    path.components()
-        .filter(|component| !matches!(component.as_str(), "/" | "."))
-        .count()
 }
 
 fn is_broad_global_component(component: &str) -> bool {
@@ -591,6 +578,10 @@ fn allowed_global_cache_prefixes() -> &'static [&'static [&'static str]] {
         &[".terraform.d", "plugin-cache"],
         &["Library", "Developer", "Xcode", "DerivedData"],
         &[".ollama", "models"],
+        &[".config", "lima", "_disks"],
+        &[".config", "lima", "colima"],
+        &["Virtual Machines.localized"],
+        &["Virtual Machines"],
     ]
 }
 
@@ -946,7 +937,7 @@ requirements = [
 [global]
 builtin_rules = "none"
 
-[global.extra_rules.bad_global]
+[global.extra_targets.bad_global]
 path = "{path}"
 "#
             ));
@@ -968,23 +959,29 @@ path = "{path}"
 [global]
 builtin_rules = "none"
 
-[global.extra_rules.terraform_plugins]
+[global.extra_targets.terraform_plugins]
 path = ".terraform.d/plugin-cache"
 
-[global.extra_rules.cargo_registry]
+[global.extra_targets.cargo_registry]
 path = ".cargo/registry"
 
-[global.extra_rules.pnpm_store]
+[global.extra_targets.pnpm_store]
 path = "Library/pnpm/store"
 
-[global.extra_rules.cargo_child]
+[global.extra_targets.cargo_child]
 path = ".cargo/registry/custom"
+
+[global.extra_targets.lima_disks]
+path = ".config/lima/_disks"
+
+[global.extra_targets.vmware_fusion]
+path = "Virtual Machines.localized"
 "#,
         );
 
         let config = AppConfig::load_global(Some(&config_path)).unwrap();
 
-        assert_eq!(config.rules.len(), 4);
+        assert_eq!(config.rules.len(), 6);
     }
 
     #[test]
@@ -995,7 +992,7 @@ path = ".cargo/registry/custom"
 [scan]
 roots = ["projects"]
 
-[global.extra_rules.bad_global]
+[global.extra_targets.bad_global]
 path = "."
 "#,
         );

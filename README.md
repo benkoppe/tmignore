@@ -92,10 +92,10 @@ services.tmignore.scan.extraRules.pnpm_store = {
 };
 ```
 
-Extra global cache rules are fixed paths under known cache namespaces, resolved relative to the user's home directory:
+Extra global cache targets are fixed paths under known cache namespaces, resolved relative to the user's home directory:
 
 ```nix
-services.tmignore.global.extraRules.custom_cache.path = ".cargo/registry/custom";
+services.tmignore.global.extraTargets.custom_cache.path = ".cargo/registry/custom";
 ```
 
 Manual CLI usage is split into explicit commands:

@@ -44,7 +44,7 @@ fn global_reports_matched_global_cache_directory() {
 [global]
 builtin_rules = "none"
 
-[global.extra_rules.custom_cache]
+[global.extra_targets.custom_cache]
 path = ".cargo/registry/custom"
 "#,
     );
@@ -72,7 +72,7 @@ fn global_rejects_broad_extra_rule_paths() {
 [global]
 builtin_rules = "none"
 
-[global.extra_rules.documents]
+[global.extra_targets.documents]
 path = "Documents/project"
 "#,
     );
@@ -103,7 +103,7 @@ roots = ["{}"]
 [global]
 builtin_rules = "none"
 
-[global.extra_rules.custom_cache]
+[global.extra_targets.custom_cache]
 path = ".cargo/registry/custom"
 "#,
         fixture.path_string("project")

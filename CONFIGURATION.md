@@ -58,7 +58,7 @@ Global options:
 | `services.tmignore.global.enable` | `true` | Whether the scheduled job should also process global dependency/cache directories. |
 | `services.tmignore.global.builtinRules` | `"defaults"` | Built-in global rule policy: `"defaults"` or `"none"`. |
 | `services.tmignore.global.disabledBuiltinRules` | `[]` | Built-in global rule IDs to disable. |
-| `services.tmignore.global.extraRules` | `{}` | Extra named global cache paths under known cache namespaces. Paths resolve against the user's home directory. |
+| `services.tmignore.global.extraTargets` | `{}` | Extra named global cache/VM targets under known namespaces. Paths resolve against the user's home directory. |
 
 Full example:
 
@@ -75,7 +75,9 @@ in
     scan.skipPaths = [ "${home}/Developer/archive" ];
     scan.disabledBuiltinRules = [ "node.parcel-cache" ];
     global.disabledBuiltinRules = [ "ollama.models" ];
-    global.extraRules.custom_cache.path = ".cargo/registry/custom";
+    global.extraTargets.custom_cache.path = ".cargo/registry/custom";
+    global.extraTargets.lima_disks.path = ".config/lima/_disks";
+    global.extraTargets.vmware_fusion.path = "Virtual Machines.localized";
     stdoutPath = "${home}/Library/Logs/tmignore.log";
     stderrPath = "${home}/Library/Logs/tmignore.error.log";
   };
@@ -110,8 +112,14 @@ base = "candidate_parent"
 builtin_rules = "defaults"
 disabled_builtin_rules = ["ollama.models"]
 
-[global.extra_rules.custom_cache]
+[global.extra_targets.custom_cache]
 path = ".cargo/registry/custom"
+
+[global.extra_targets.lima_disks]
+path = ".config/lima/_disks"
+
+[global.extra_targets.vmware_fusion]
+path = "Virtual Machines.localized"
 ```
 
 Relative `scan.roots` and `scan.skip_paths` are resolved against the process current directory by the CLI. The nix-darwin module rejects relative scan paths. Global paths must be relative to the user's home directory and under a known cache namespace; `~` is not expanded.
@@ -170,7 +178,7 @@ Global rules deliberately target precise cache directories and selected reinstal
 
 ### Custom Global Rule Namespaces
 
-Extra global rules are accepted only when their paths are exactly one of these known cache namespaces or children below them:
+Extra global targets are accepted only when their paths are exactly one of these known cache/VM namespaces or children below them:
 
 | Accepted prefix |
 | --- |
@@ -190,8 +198,12 @@ Extra global rules are accepted only when their paths are exactly one of these k
 | `.terraform.d/plugin-cache` |
 | `Library/Developer/Xcode/DerivedData` |
 | `.ollama/models` |
+| `.config/lima/_disks` |
+| `.config/lima/colima` |
+| `Virtual Machines.localized` |
+| `Virtual Machines` |
 
-Arbitrary home subtrees such as `Documents/project`, `Desktop/cache`, `Library/Application Support`, `.config/app`, or absolute paths are rejected.
+The VM/container runtime namespaces are opt-in only and are not part of the default global catalog because they may contain mutable VM/container state. Arbitrary home subtrees such as `Documents/project`, `Desktop/cache`, `Library/Application Support`, `.config/app`, or absolute paths are rejected.
 
 ## Exit Codes
 

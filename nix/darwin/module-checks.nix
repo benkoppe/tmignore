@@ -82,7 +82,9 @@ let
       ];
     };
     global.builtinRules = "none";
-    global.extraRules.custom_cache.path = ".cargo/registry/custom";
+    global.extraTargets.custom_cache.path = ".cargo/registry/custom";
+    global.extraTargets.lima_disks.path = ".config/lima/_disks";
+    global.extraTargets.vmware_fusion.path = "Virtual Machines.localized";
   };
 
   scanOnly = evalDarwin {
@@ -90,6 +92,14 @@ let
     package = self'.packages.tmignore;
     scan.roots = [ "/Users/alice/Developer" ];
     global.enable = false;
+  };
+
+  scanOnlyWithInvalidGlobalExtraTarget = evalDarwin {
+    enable = true;
+    package = self'.packages.tmignore;
+    scan.roots = [ "/Users/alice/Developer" ];
+    global.enable = false;
+    global.extraTargets.bad.path = "Documents/project";
   };
 
   invalidSchedule = builtins.tryEval (
@@ -139,31 +149,32 @@ let
     enable = true;
     package = self'.packages.tmignore;
     scan.roots = [ "/Users/alice/Developer" ];
-    global.extraRules.bad.path = "Documents/project";
+    global.extraTargets.bad.path = "Documents/project";
   });
 
   absoluteGlobalExtraPath = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
     scan.roots = [ "/Users/alice/Developer" ];
-    global.extraRules.bad.path = "/Users/alice/.cargo/registry";
+    global.extraTargets.bad.path = "/Users/alice/.cargo/registry";
   });
 
   tildeGlobalExtraPath = builtins.tryEval (evalSystem {
     enable = true;
     package = self'.packages.tmignore;
     scan.roots = [ "/Users/alice/Developer" ];
-    global.extraRules.bad.path = "~/.cargo/registry";
+    global.extraTargets.bad.path = "~/.cargo/registry";
   });
 
   dryRunAgent = enabledDryRun.config.launchd.user.agents.tmignore.serviceConfig;
   applyAgent = enabledApply.config.launchd.user.agents.tmignore.serviceConfig;
-  extraRulesAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
+  extraTargetsAgent = withExtraRules.config.launchd.user.agents.tmignore.serviceConfig;
   scanOnlyAgent = scanOnly.config.launchd.user.agents.tmignore.serviceConfig;
+  scanOnlyInvalidGlobalAgent = scanOnlyWithInvalidGlobalExtraTarget.config.launchd.user.agents.tmignore.serviceConfig;
 
   dryRunConfig = builtins.elemAt dryRunAgent.ProgramArguments 3;
   applyConfig = builtins.elemAt applyAgent.ProgramArguments 3;
-  extraRulesConfig = builtins.elemAt extraRulesAgent.ProgramArguments 3;
+  extraTargetsConfig = builtins.elemAt extraTargetsAgent.ProgramArguments 3;
 in
 {
   tmignore-darwin-module = pkgs.runCommand "tmignore-darwin-module-check" { } ''
@@ -205,6 +216,7 @@ in
     test "${if applyAgent.RunAtLoad then "true" else "false"}" = "true"
 
     test "${builtins.elemAt scanOnlyAgent.ProgramArguments 1}" = "scan"
+    test "${builtins.elemAt scanOnlyInvalidGlobalAgent.ProgramArguments 1}" = "scan"
 
     grep -q '\[scan\]' '${dryRunConfig}'
     grep -q 'roots = \["/Users/alice/Developer"\]' '${dryRunConfig}'
@@ -213,14 +225,18 @@ in
     grep -q 'disabled_builtin_rules = \["node.parcel-cache"\]' '${dryRunConfig}'
     grep -q '\[global\]' '${dryRunConfig}'
 
-    grep -q 'builtin_rules = "none"' '${extraRulesConfig}'
-    grep -q '\[\[scan.extra_rules.pnpm_store.cases\]\]' '${extraRulesConfig}'
-    grep -q '\[\[scan.extra_rules.pnpm_store.cases.targets\]\]' '${extraRulesConfig}'
-    grep -q '\[\[scan.extra_rules.pnpm_store.cases.requirements.any_of\]\]' '${extraRulesConfig}'
-    grep -q 'path = ".pnpm-store"' '${extraRulesConfig}'
-    grep -q 'base = "candidate_parent"' '${extraRulesConfig}'
-    grep -q '\[global.extra_rules.custom_cache\]' '${extraRulesConfig}'
-    grep -q 'path = ".cargo/registry/custom"' '${extraRulesConfig}'
+    grep -q 'builtin_rules = "none"' '${extraTargetsConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases\]\]' '${extraTargetsConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases.targets\]\]' '${extraTargetsConfig}'
+    grep -q '\[\[scan.extra_rules.pnpm_store.cases.requirements.any_of\]\]' '${extraTargetsConfig}'
+    grep -q 'path = ".pnpm-store"' '${extraTargetsConfig}'
+    grep -q 'base = "candidate_parent"' '${extraTargetsConfig}'
+    grep -q '\[global.extra_targets.custom_cache\]' '${extraTargetsConfig}'
+    grep -q 'path = ".cargo/registry/custom"' '${extraTargetsConfig}'
+    grep -q '\[global.extra_targets.lima_disks\]' '${extraTargetsConfig}'
+    grep -q 'path = ".config/lima/_disks"' '${extraTargetsConfig}'
+    grep -q '\[global.extra_targets.vmware_fusion\]' '${extraTargetsConfig}'
+    grep -q 'path = "Virtual Machines.localized"' '${extraTargetsConfig}'
 
     touch $out
   '';
